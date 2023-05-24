@@ -151,34 +151,59 @@ def image_to_wd14_tags(image: Image.Image, model_name: str, threshold: float,
         text_items.append(tag_outformat)
     output_text = ', '.join(text_items)
 
-    return ratings, output_text, filtered_tags
+    return output_text
 
-def url_to_image (img_url: str):
+def post_to_item_danbooru (post):
+    img_url = post['large_file_url']
+    tag_string_character = post['tag_string_character']
+    tag_string_general = post['tag_string_general']
+    tag_all = tag_string_character.split(' ') + tag_string_general.split(' ')
+    tag_all_text = ', '.join(tag_all)
     response = urlopen(img_url)
     image_data = response.read()
     image_stream = BytesIO(image_data)
     image = Image.open(image_stream)
     
-    return image
+    return image, tag_all_text
+
+def post_to_item_yande (post):
+    img_url = post['sample_url']
+    tag_all = post['tags']
+    tag_all_text = ', '.join(tag_all.split(' '))
+    response = urlopen(img_url)
+    image_data = response.read()
+    image_stream = BytesIO(image_data)
+    image = Image.open(image_stream)
+    
+    return image, tag_all_text
 
 def search_images_from_danbooru (tags: str, gr_limit_input: int):
     url = 'https://danbooru.donmai.us/posts.json'
     params = { 'tags': tags, 'limit': gr_limit_input }
     response = requests.get(url, params=params)
     data = response.json()
-    image_urls = list(map(
-        lambda x: x['large_file_url'],
-        filter(lambda x: 'large_file_url' in x, data)))
+    image_urls = filter(lambda x: 'large_file_url' in x, data)
     with ThreadPoolExecutor(max_workers=8) as executor:
-        images = list(executor.map(url_to_image, image_urls))
+        images = list(executor.map(post_to_item_danbooru, image_urls))
+    return images
+
+def search_image_from_yande (tags: str, gr_limit_input: int):
+    url = 'https://yande.re/post.json'
+    params = { 'tags': tags, 'limit': gr_limit_input }
+    response = requests.get(url, params=params)
+    data = response.json()
+    image_urls = filter(lambda x: 'sample_url' in x, data)
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        images = list(executor.map(post_to_item_yande, image_urls))
     return images
 
 def on_select_gallery (gallery, model_name: str, threshold: float,
                        use_spaces: bool, use_escape: bool, include_ranks: bool, score_descend: bool, evt: gr.SelectData):
-    img_url = gallery[evt.index]['name']
+    img_url = gallery[evt.index][0]['name']
+    source_tags = gallery[evt.index][1]
     image = Image.open(img_url)
 
-    return image_to_wd14_tags(image, model_name, threshold, use_spaces, use_escape, include_ranks, score_descend)
+    return image_to_wd14_tags(image, model_name, threshold, use_spaces, use_escape, include_ranks, score_descend), source_tags
 
 if __name__ == '__main__':
     with gr.Blocks() as demo:
@@ -202,17 +227,14 @@ if __name__ == '__main__':
                     gr_order = gr.Checkbox(value=True, label='Descend By Confidence')
 
             with gr.Column():
-                gr_ratings = gr.Label(label='Ratings')
-                with gr.Tabs():
-                    with gr.Tab("Tags"):
-                        gr_tags = gr.Label(label='Tags')
-                    with gr.Tab("Exported Text"):
-                        gr_output_text = gr.TextArea(label='Exported Text')
+                gr_output_source_tags = gr.TextArea(label='source tags')
+                gr_output_text = gr.TextArea(label='interrogate tags')
 
         btn_search_danbooru.click(fn=search_images_from_danbooru, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
+        btn_search_yande.click(fn=search_image_from_yande, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
 
         gallery.select(fn=on_select_gallery, 
                        inputs=[gallery, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order],
-                       outputs=[gr_ratings, gr_output_text, gr_tags])
+                       outputs=[gr_output_text, gr_output_source_tags])
 
     demo.queue(os.cpu_count()).launch()
