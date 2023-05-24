@@ -1,4 +1,4 @@
-gradio==3.16.1
+gradio==3.32.0
 numpy
 pillow
 onnxruntime
@@ -6,3 +6,4 @@ huggingface_hub
 scikit-image
 pandas
 opencv-python>=4.6.0
+requests

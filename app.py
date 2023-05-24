@@ -6,11 +6,13 @@ import cv2
 import gradio as gr
 import numpy as np
 import pandas as pd
+import requests
 from PIL import Image
 from huggingface_hub import hf_hub_download
 from onnxruntime import InferenceSession
 from urllib.request import urlopen
 from io import BytesIO
+from concurrent.futures import ThreadPoolExecutor
 
 # noinspection PyUnresolvedReferences
 def make_square(img, target_size):
@@ -151,20 +153,30 @@ def image_to_wd14_tags(image: Image.Image, model_name: str, threshold: float,
 
     return ratings, output_text, filtered_tags
 
-def get_images ():
-    images = [
-        'https://cdn.donmai.us/sample/5f/eb/sample-5feb40fa3d38af321be38747faf5d9b3.jpg',
-        'https://cdn.donmai.us/sample/75/8c/sample-758ca61245668ed1faa9ef25c3f0b529.jpg'
-    ]
+def url_to_image (img_url: str):
+    response = urlopen(img_url)
+    image_data = response.read()
+    image_stream = BytesIO(image_data)
+    image = Image.open(image_stream)
+    
+    return image
+
+def search_images_from_danbooru (tags: str, gr_limit_input: int):
+    url = 'https://danbooru.donmai.us/posts.json'
+    params = { 'tags': tags, 'limit': gr_limit_input }
+    response = requests.get(url, params=params)
+    data = response.json()
+    image_urls = list(map(
+        lambda x: x['large_file_url'],
+        filter(lambda x: 'large_file_url' in x, data)))
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        images = list(executor.map(url_to_image, image_urls))
     return images
 
 def on_select_gallery (gallery, model_name: str, threshold: float,
                        use_spaces: bool, use_escape: bool, include_ranks: bool, score_descend: bool, evt: gr.SelectData):
     img_url = gallery[evt.index]['name']
-    response = urlopen(img_url)
-    image_data = response.read()
-    image_stream = BytesIO(image_data)
-    image = Image.open(image_stream)
+    image = Image.open(img_url)
 
     return image_to_wd14_tags(image, model_name, threshold, use_spaces, use_escape, include_ranks, score_descend)
 
@@ -173,13 +185,16 @@ if __name__ == '__main__':
         with gr.Row():
             with gr.Column():
                 with gr.Row():
-                    gr_tags_input = gr.Textbox(label='tags')
-                    btn = gr.Button(value='GetImages', variant='primary')
+                    gr_tags_input = gr.Textbox(label='danbooru tags', value='rating:Safe')
+                    gr_limit_input = gr.Number(label='limit', value=10)
                 with gr.Row():
-                    gallery = gr.Gallery(label='Gallery').style(full_width=False, columns=[2], rows=[2], object_fit="contain", height="auto")
+                    btn_search_danbooru = gr.Button(value='Search from Danbooru', variant='primary')
+                    btn_search_yande = gr.Button(value='Search from Yande', variant='primary')
+                with gr.Row():
+                    gallery = gr.Gallery(label='Gallery').style(full_width=False, columns=[4], rows=[3], object_fit="contain", height="auto")
                 with gr.Row():
                     gr_model = gr.Radio(list(WAIFU_MODELS.keys()), value='wd14-convnext', label='Waifu Model')
-                    gr_threshold = gr.Slider(0.0, 1.0, 0.5, label='Tagging Confidence Threshold')
+                    gr_threshold = gr.Slider(0.0, 1.0, 0.35, label='Tagging Confidence Threshold')
                 with gr.Row():
                     gr_space = gr.Checkbox(value=False, label='Use Space Instead Of _')
                     gr_escape = gr.Checkbox(value=True, label='Use Text Escape')
@@ -194,7 +209,7 @@ if __name__ == '__main__':
                     with gr.Tab("Exported Text"):
                         gr_output_text = gr.TextArea(label='Exported Text')
 
-        btn.click(fn=get_images, outputs=[gallery])
+        btn_search_danbooru.click(fn=search_images_from_danbooru, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
 
         gallery.select(fn=on_select_gallery, 
                        inputs=[gallery, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order],
