@@ -205,6 +205,15 @@ def on_select_gallery (gallery, model_name: str, threshold: float,
 
     return image_to_wd14_tags(image, model_name, threshold, use_spaces, use_escape, include_ranks, score_descend), source_tags
 
+def on_click_img_url_interrogate (img_url: str, model_name: str, threshold: float,
+                       use_spaces: bool, use_escape: bool, include_ranks: bool, score_descend: bool):
+    response = urlopen(img_url)
+    image_data = response.read()
+    image_stream = BytesIO(image_data)
+    image = Image.open(image_stream)
+
+    return image_to_wd14_tags(image, model_name, threshold, use_spaces, use_escape, include_ranks, score_descend)
+
 if __name__ == '__main__':
     with gr.Blocks() as demo:
         with gr.Row():
@@ -216,7 +225,8 @@ if __name__ == '__main__':
                     btn_search_danbooru = gr.Button(value='Search from Danbooru', variant='primary')
                     btn_search_yande = gr.Button(value='Search from Yande', variant='primary')
                 with gr.Row():
-                    gallery = gr.Gallery(label='Gallery').style(full_width=False, columns=[4], rows=[3], object_fit="contain", height="auto")
+                    gallery = gr.Gallery(label='Gallery').style(
+                        full_width=False, columns=[4], rows=[3], object_fit="contain", height="auto", show_label=False)
                 with gr.Row():
                     gr_model = gr.Radio(list(WAIFU_MODELS.keys()), value='wd14-convnext', label='Waifu Model')
                     gr_threshold = gr.Slider(0.0, 1.0, 0.35, label='Tagging Confidence Threshold')
@@ -229,9 +239,12 @@ if __name__ == '__main__':
             with gr.Column():
                 gr_output_source_tags = gr.TextArea(label='source tags')
                 gr_output_text = gr.TextArea(label='interrogate tags')
+                gr_img_url = gr.Textbox(label='image url')
+                btn_gr_img_interrogate = gr.Button(value='Interrogate', variant='primary')
 
         btn_search_danbooru.click(fn=search_images_from_danbooru, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
         btn_search_yande.click(fn=search_image_from_yande, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
+        btn_gr_img_interrogate.click(fn=on_click_img_url_interrogate, inputs=[gr_img_url, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order], outputs=[gr_output_text])
 
         gallery.select(fn=on_select_gallery, 
                        inputs=[gallery, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order],
