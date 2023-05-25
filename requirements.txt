@@ -7,3 +7,4 @@ scikit-image
 pandas
 opencv-python>=4.6.0
 requests
+setuptools
