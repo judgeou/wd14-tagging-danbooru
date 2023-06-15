@@ -3,3 +3,4 @@ white_background
 grey_background
 mole
 mole_under_eye
+multiple_views
