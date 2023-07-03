@@ -2,3 +2,4 @@
 3girls 1girl
 4girls 1girl
 multiple_girls solo
+simple_background blurry_background,outdoors

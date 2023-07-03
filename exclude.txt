@@ -1,6 +1,7 @@
-simple_background
-white_background
-grey_background
 mole
 mole_under_eye
 multiple_views
+white_background
+;p
+tongue_out
+tongue
