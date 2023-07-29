@@ -2,6 +2,11 @@ mole
 mole_under_eye
 multiple_views
 white_background
+grey_background
+black_background
 ;p
 tongue_out
 tongue
+mask
+mouth_mask
+mask_pull

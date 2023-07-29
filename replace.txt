@@ -1,5 +1,6 @@
-2girls 1girl
-3girls 1girl
-4girls 1girl
-multiple_girls solo
-simple_background blurry_background,outdoors
+2girls1 1girl
+3girls1 1girl
+4girls1 1girl
+multiple_girls1 solo
+simple_background outdoors
+checkered_background outdoors

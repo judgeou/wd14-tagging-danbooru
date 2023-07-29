@@ -10,6 +10,7 @@ import requests
 from PIL import Image
 from huggingface_hub import hf_hub_download
 from onnxruntime import InferenceSession
+import onnxruntime as rt
 from urllib.request import urlopen
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
@@ -64,6 +65,8 @@ class WaifuDiffusionInterrogator:
 
         model_path = hf_hub_download(self.__repo, filename=self.__model_path)
         tags_path = hf_hub_download(self.__repo, filename=self.__tags_path)
+
+        providers = rt.get_available_providers()
 
         self._model = InferenceSession(str(model_path))
         self._tags = pd.read_csv(tags_path)
@@ -120,7 +123,7 @@ class WaifuDiffusionInterrogator:
 WAIFU_MODELS: Mapping[str, WaifuDiffusionInterrogator] = {
     'wd14-vit': WaifuDiffusionInterrogator(),
     'wd14-convnext': WaifuDiffusionInterrogator(
-        repo='SmilingWolf/wd-v1-4-convnextv2-tagger-v2'
+        repo='SmilingWolf/wd-v1-4-convnextv2-tagger-v2',
     ),
 }
 RE_SPECIAL = re.compile(r'([\\()])')
@@ -214,40 +217,40 @@ def on_click_img_url_interrogate (img_url: str, model_name: str, threshold: floa
 
     return image_to_wd14_tags(image, model_name, threshold, use_spaces, use_escape, include_ranks, score_descend)
 
-if __name__ == '__main__':
-    with gr.Blocks() as demo:
-        with gr.Row():
-            with gr.Column():
-                with gr.Row():
-                    gr_tags_input = gr.Textbox(label='danbooru tags', value='rating:Safe')
-                    gr_limit_input = gr.Number(label='limit', value=10)
-                with gr.Row():
-                    btn_search_danbooru = gr.Button(value='Search from Danbooru', variant='primary')
-                    btn_search_yande = gr.Button(value='Search from Yande', variant='primary')
-                with gr.Row():
-                    gallery = gr.Gallery(label='Gallery').style(
-                        full_width=False, columns=[4], rows=[3], object_fit="contain", height="auto", show_label=False)
-                with gr.Row():
-                    gr_model = gr.Radio(list(WAIFU_MODELS.keys()), value='wd14-convnext', label='Waifu Model')
-                    gr_threshold = gr.Slider(0.0, 1.0, 0.35, label='Tagging Confidence Threshold')
-                with gr.Row():
-                    gr_space = gr.Checkbox(value=False, label='Use Space Instead Of _')
-                    gr_escape = gr.Checkbox(value=True, label='Use Text Escape')
-                    gr_confidence = gr.Checkbox(value=False, label='Keep Confidences')
-                    gr_order = gr.Checkbox(value=True, label='Descend By Confidence')
+# if __name__ == '__main__':
+#     with gr.Blocks() as demo:
+#         with gr.Row():
+#             with gr.Column():
+#                 with gr.Row():
+#                     gr_tags_input = gr.Textbox(label='danbooru tags', value='rating:Safe')
+#                     gr_limit_input = gr.Number(label='limit', value=10)
+#                 with gr.Row():
+#                     btn_search_danbooru = gr.Button(value='Search from Danbooru', variant='primary')
+#                     btn_search_yande = gr.Button(value='Search from Yande', variant='primary')
+#                 with gr.Row():
+#                     gallery = gr.Gallery(label='Gallery').style(
+#                         full_width=False, columns=[4], rows=[3], object_fit="contain", height="auto", show_label=False)
+#                 with gr.Row():
+#                     gr_model = gr.Radio(list(WAIFU_MODELS.keys()), value='wd14-convnext', label='Waifu Model')
+#                     gr_threshold = gr.Slider(0.0, 1.0, 0.35, label='Tagging Confidence Threshold')
+#                 with gr.Row():
+#                     gr_space = gr.Checkbox(value=False, label='Use Space Instead Of _')
+#                     gr_escape = gr.Checkbox(value=True, label='Use Text Escape')
+#                     gr_confidence = gr.Checkbox(value=False, label='Keep Confidences')
+#                     gr_order = gr.Checkbox(value=True, label='Descend By Confidence')
 
-            with gr.Column():
-                gr_output_source_tags = gr.TextArea(label='source tags')
-                gr_output_text = gr.TextArea(label='interrogate tags')
-                gr_img_url = gr.Textbox(label='image url')
-                btn_gr_img_interrogate = gr.Button(value='Interrogate', variant='primary')
+#             with gr.Column():
+#                 gr_output_source_tags = gr.TextArea(label='source tags')
+#                 gr_output_text = gr.TextArea(label='interrogate tags')
+#                 gr_img_url = gr.Textbox(label='image url')
+#                 btn_gr_img_interrogate = gr.Button(value='Interrogate', variant='primary')
 
-        btn_search_danbooru.click(fn=search_images_from_danbooru, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
-        btn_search_yande.click(fn=search_image_from_yande, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
-        btn_gr_img_interrogate.click(fn=on_click_img_url_interrogate, inputs=[gr_img_url, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order], outputs=[gr_output_text])
+#         btn_search_danbooru.click(fn=search_images_from_danbooru, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
+#         btn_search_yande.click(fn=search_image_from_yande, inputs=[gr_tags_input, gr_limit_input], outputs=[gallery])
+#         btn_gr_img_interrogate.click(fn=on_click_img_url_interrogate, inputs=[gr_img_url, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order], outputs=[gr_output_text])
 
-        gallery.select(fn=on_select_gallery, 
-                       inputs=[gallery, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order],
-                       outputs=[gr_output_text, gr_output_source_tags])
+#         gallery.select(fn=on_select_gallery, 
+#                        inputs=[gallery, gr_model, gr_threshold, gr_space, gr_escape, gr_confidence, gr_order],
+#                        outputs=[gr_output_text, gr_output_source_tags])
 
-    demo.queue(os.cpu_count()).launch()
+#     demo.queue(os.cpu_count()).launch()

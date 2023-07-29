@@ -1,0 +1,118 @@
+import sqlite3
+import json
+from urllib.request import urlopen
+from urllib.error import URLError, HTTPError
+from concurrent.futures import ThreadPoolExecutor
+import time
+import threading
+from io import BytesIO
+from PIL import Image
+import requests
+import app
+
+def getdb ():
+    conn = sqlite3.connect('images-tags.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+lock = threading.Lock()
+
+def get_last_id ():
+   with getdb() as conn:
+      c = conn.cursor()
+      c.execute('SELECT MIN(id) as id from posts')
+      row = c.fetchone()
+      c.close()
+      return row['id']
+
+def get_post (id):
+    with getdb() as conn:
+      c = conn.cursor()
+
+      c.execute('SELECT * FROM posts where id = ?', (id,))
+      row = c.fetchone()
+      c.close()
+
+      return row
+
+def add_post (post):
+    if ('sample_url' not in post):
+       return post['id']
+  
+    id = post['id']
+    file_ext = post['file_ext']
+    sample_url = post['sample_url']
+    file_url = post['file_url']
+    sample_width = post['sample_width']
+    sample_height = post['sample_height']
+    score = post['score']
+    updated_at = post['updated_at']
+
+    post = get_post(id)
+
+    if (post is not None):
+       return
+
+    while True:
+      try:
+        res = urlopen(sample_url)
+        sample_data = res.read()
+        break
+      except Exception as e:
+        print(e)
+        continue
+    
+    image_stream = BytesIO(sample_data)
+    image = Image.open(image_stream)
+
+    tags = app.image_to_wd14_tags(image, 'wd14-convnext', 0.35, False, True, False, True)
+
+    with lock:
+      with getdb() as conn:
+        c = conn.cursor()
+
+        c.execute(f'INSERT INTO posts (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags) VALUES (?,?,?,?,?,?,?,?,?)', 
+                  (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags))
+        
+        tag_list = tags.split(',')
+        for tag in tag_list:
+          t = tag.strip()
+          c.execute('INSERT INTO tags (post_id, tag) VALUES (?, ?)', (id, t))
+
+        c.execute('INSERT INTO images (id, data) VALUES (?, ?)', (id, sample_data))
+        
+        c.close()
+        conn.commit()
+
+    return id
+
+def add_post_task (post):
+   id = post['id']
+   
+   with lock:
+      print(f'begin {id}')
+   
+   return add_post(post)
+
+def begin_dump (tags):
+    less_id = get_last_id()
+
+    while True:
+      if (less_id is None):
+        less_id = 99999999
+        
+      url = 'https://yande.re/post.json'
+      params = { 'tags': tags + f' id:<{less_id}' }
+      response = requests.get(url, params=params)
+      data = response.json()
+
+      with ThreadPoolExecutor(max_workers=4) as executor:
+        results = executor.map(add_post_task, data)
+
+        for r in results:
+          if r < less_id:
+             less_id = r
+          print(f'done: {r}')
+        
+
+begin_dump('rating:s')

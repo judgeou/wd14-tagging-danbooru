@@ -12,9 +12,20 @@
       "console": "integratedTerminal",
       "justMyCode": true,
       "env": {
-        "http_proxy": "http://localhost:1092/",
-        "https_proxy": "http://localhost:1092/",
+        "http_proxy": "http://localhost:1081/",
+        "https_proxy": "http://localhost:1081/",
         "no_proxy": "localhost,127.0.0.1"
+      }
+    },
+    {
+      "name": "flask app",
+      "type": "python",
+      "request": "launch",
+      "program": "web-server.py",
+      "console": "integratedTerminal",
+      "justMyCode": true,
+      "env": {
+
       }
     }
   ]
