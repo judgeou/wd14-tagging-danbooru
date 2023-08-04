@@ -7,8 +7,23 @@ import io
 
 app = Flask(__name__)
 
-def getdb ():
-    conn = sqlite3.connect('images-tags.db')
+def excludeTags (str):
+    f = open('exclude.txt', 'r')
+    for line in f.readlines():
+        str = str.replace(line.strip(), '')
+    f.close()
+    return str
+
+def replaceTags (str):
+    f = open('replace.txt', 'r')
+    for line in f.readlines():
+        pair = line.split()
+        str = str.replace(pair[0], pair[1])
+    f.close()
+    return str
+
+def getdb (dbname = 'images-tags.db'):
+    conn = sqlite3.connect(dbname)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -18,7 +33,7 @@ def send_report(path):
 
 @app.route("/api/image/<int:id>")
 def image(id: int):
-    with getdb() as conn:
+    with getdb('images-data.db') as conn:
         c = conn.cursor()
         c.execute('SELECT id, data FROM images where id = ?', (id,))
         data = c.fetchone()['data']
@@ -39,9 +54,10 @@ def random ():
 
         results = []
         for row in rows:
+            tags = replaceTags(excludeTags(row['tags']))
             results.append({
                 "id": row['id'],
-                "tags": row['tags']
+                "tags": tags
             })
 
         return results

@@ -10,8 +10,8 @@ from PIL import Image
 import requests
 import app
 
-def getdb ():
-    conn = sqlite3.connect('images-tags.db')
+def getdb (dbname = 'images-tags.db'):
+    conn = sqlite3.connect(dbname)
     conn.row_factory = sqlite3.Row
     return conn
 
@@ -68,7 +68,7 @@ def add_post (post):
     tags = app.image_to_wd14_tags(image, 'wd14-convnext', 0.35, False, True, False, True)
 
     with lock:
-      with getdb() as conn:
+      with getdb() as conn, getdb('images-data.db') as conn_data:
         c = conn.cursor()
 
         c.execute(f'INSERT INTO posts (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags) VALUES (?,?,?,?,?,?,?,?,?)', 
@@ -79,10 +79,13 @@ def add_post (post):
           t = tag.strip()
           c.execute('INSERT INTO tags (post_id, tag) VALUES (?, ?)', (id, t))
 
-        c.execute('INSERT INTO images (id, data) VALUES (?, ?)', (id, sample_data))
+        c2 = conn_data.cursor()
+        c2.execute('INSERT INTO images (id, data) VALUES (?, ?)', (id, sample_data))
         
         c.close()
         conn.commit()
+        c2.close()
+        conn_data.commit()
 
     return id
 
@@ -113,6 +116,22 @@ def begin_dump (tags):
           if r < less_id:
              less_id = r
           print(f'done: {r}')
-        
+
+def split_image_data ():
+   with getdb() as conn1, getdb('images-data.db') as conn2:
+      c1 = conn1.cursor()
+      c2 = conn2.cursor()
+
+      c1.execute('SELECT id FROM images')
+      rows1 = c1.fetchall()
+
+      for row1 in rows1:
+         id = row1['id']
+         c1.execute('SELECT data FROM images where id = ?', (id,))
+         data = c1.fetchone()['data']
+
+         c2.execute('INSERT INTO images (id, data) VALUES (?,?)', (id, data))
+      conn2.commit()
 
 begin_dump('rating:s')
+# split_image_data()

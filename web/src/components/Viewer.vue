@@ -73,7 +73,7 @@ async function input_complete (item: ITagsCompleteItem) {
   <div>
 
     <input ref="el_taginput" type="text" placeholder="tags" v-model="tag_input" style="width: 300px;" @input="trigger_complete">
-
+    opacity:<input type="number" v-model="img_opacity" min="0" max="10" />
   </div>
 
   <div v-if="tags_complete_items.length > 0" class="tags-complete">
@@ -96,6 +96,10 @@ async function input_complete (item: ITagsCompleteItem) {
         <a target="_blank" :href="`https://yande.re/post/show/${post.id}`">open</a>
       </div>
     </div>
+  </div>
+
+  <div style="margin-top: 8px;">
+    <button :disabled="isLoading" @click="search()" style="height: 30px;">Search</button>
   </div>
 </template>
 
