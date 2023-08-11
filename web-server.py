@@ -47,9 +47,22 @@ def image(id: int):
 @app.route("/api/random")
 def random ():
     limit = request.args.get('limit', 20, int)
+    tags = request.args.get('tags', '', str)
     with getdb() as conn:
+        tag_list = [n for n in tags.split(' ') if n.strip() != '']
+        tag_list = ["'" + item + "'" if isinstance(item, str) else item for item in tag_list]
+        
+        tagsFilter = f'where tags.tag in ({", ".join(tag_list)})' if len(tag_list) > 0 else ''
+        sqlstr = f'''select post_id id, tags from tags
+inner join posts on posts.id = post_id
+{tagsFilter}
+GROUP by post_id
+having count(tags.tag) >= {len(tag_list)}
+order by random()
+limit ?'''
         c = conn.cursor()
-        c.execute('select id, tags from posts order by random() limit ?', (limit, ))
+        print(sqlstr)
+        c.execute(sqlstr, (limit, ))
         rows = c.fetchall()
 
         results = []

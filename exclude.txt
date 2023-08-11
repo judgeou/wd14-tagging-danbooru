@@ -1,7 +1,6 @@
 mole
 mole_under_eye
 multiple_views
-white_background
 grey_background
 black_background
 ;p

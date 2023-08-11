@@ -2,5 +2,3 @@
 3girls1 1girl
 4girls1 1girl
 multiple_girls1 solo
-simple_background outdoors
-checkered_background outdoors

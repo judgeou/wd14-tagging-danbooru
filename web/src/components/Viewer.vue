@@ -28,7 +28,7 @@ async function search () {
   try {
     isLoading.value = true
 
-    const res = await fetch(`/api/random`)
+    const res = await fetch(`/api/random?tags=${tag_input.value}`)
     posts.value = await res.json()
     
     img_src_loaded.value = posts.value
@@ -67,6 +67,13 @@ async function input_complete (item: ITagsCompleteItem) {
   el_taginput.value?.focus()
 }
 
+function back_top () {
+  window.scrollTo({
+    top: 0,
+    behavior: 'smooth'
+  })
+}
+
 </script>
 
 <template>
@@ -99,7 +106,7 @@ async function input_complete (item: ITagsCompleteItem) {
   </div>
 
   <div style="margin-top: 8px;">
-    <button :disabled="isLoading" @click="search()" style="height: 30px;">Search</button>
+    <button @click="back_top()" style="height: 30px;">Back Top</button>
   </div>
 </template>
 
