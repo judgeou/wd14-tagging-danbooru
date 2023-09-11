@@ -19,7 +19,10 @@ const tag_input = ref('')
 const posts = ref([] as IPost[])
 const isLoading = ref(false)
 
+const img_column = ref(3)
+const img_width = ref(250)
 const img_opacity = ref(10)
+const img_blur = ref(0)
 const databaseName = ref('images-tags.db')
 const tags_complete_items = ref([] as ITagsCompleteItem[])
 const el_taginput = ref<HTMLInputElement>()
@@ -85,7 +88,10 @@ function back_top () {
       <option value="images-tags.db">images-tags.db</option>
       <option value="images-tags-rating_e.db">images-tags-rating_e.db</option>
     </select>
+    column: <input type="number" v-model="img_column" />
+    width: <input type="number" v-model="img_width" />
     opacity:<input type="number" v-model="img_opacity" min="0" max="10" />
+    blur:<input type="number" v-model="img_blur" min="0" max="100" />
   </div>
 
   <div v-if="tags_complete_items.length > 0" class="tags-complete">
@@ -99,9 +105,10 @@ function back_top () {
   </div>
 
   <div class="img-container">
-    <div v-for="post in img_src_loaded" :key="post.id" class="img-item">
+    <div v-for="post in img_src_loaded" :key="post.id" class="img-item" 
+    :style="{ flex: `1 0 calc(100% / ${img_column})`, 'max-width': `calc(100% / ${img_column})` }">
       <img :src="`/api/image/${post.id}`"
-           :style="{ opacity: img_opacity / 10 }">
+           :style="{ opacity: img_opacity / 10, filter: `blur(${img_blur}px)`, 'width': `${img_width}px` }">
 
       <div class="links">
         <a href="javascript:;" @click="copy_img_tags(post)">copy</a>
@@ -117,14 +124,11 @@ function back_top () {
 
 <style scoped>
 .img-container .img-item img, .img-container .img-item video {
-  width: 250px;
   height: auto;
   display: block;
   box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
 }
 .img-container .img-item {
-  flex: 1 0 calc(100% / 3);
-  max-width: calc(100% / 3);
   margin-bottom: 80px;
 }
 .img-container {
