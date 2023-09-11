@@ -20,6 +20,7 @@ const posts = ref([] as IPost[])
 const isLoading = ref(false)
 
 const img_opacity = ref(10)
+const databaseName = ref('images-tags.db')
 const tags_complete_items = ref([] as ITagsCompleteItem[])
 const el_taginput = ref<HTMLInputElement>()
 const img_src_loaded = ref([] as IPost[])
@@ -28,7 +29,7 @@ async function search () {
   try {
     isLoading.value = true
 
-    const res = await fetch(`/api/random?tags=${tag_input.value}`)
+    const res = await fetch(`/api/random?tags=${tag_input.value}&db=${databaseName.value}`)
     posts.value = await res.json()
     
     img_src_loaded.value = posts.value
@@ -80,6 +81,10 @@ function back_top () {
   <div>
 
     <input ref="el_taginput" type="text" placeholder="tags" v-model="tag_input" style="width: 300px;" @input="trigger_complete">
+    <select v-model="databaseName">
+      <option value="images-tags.db">images-tags.db</option>
+      <option value="images-tags-rating_e.db">images-tags-rating_e.db</option>
+    </select>
     opacity:<input type="number" v-model="img_opacity" min="0" max="10" />
   </div>
 

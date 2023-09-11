@@ -48,11 +48,18 @@ def image(id: int):
 def random ():
     limit = request.args.get('limit', 20, int)
     tags = request.args.get('tags', '', str)
-    with getdb() as conn:
+    dbName = request.args.get('db', '', str)
+    with getdb(dbname=dbName) as conn:
         tag_list = [n for n in tags.split(' ') if n.strip() != '']
         tag_list = ["'" + item + "'" if isinstance(item, str) else item for item in tag_list]
-        
-        tagsFilter = f'where tags.tag in ({", ".join(tag_list)})' if len(tag_list) > 0 else ''
+
+        if len(tag_list) == 0:
+            tagsFilter = ''
+        elif len(tag_list) == 1:
+            tagsFilter = f'where tags.tag like "%{tags}%"'
+        elif len(tag_list) > 1:
+            tagsFilter = f'where tags.tag in ({", ".join(tag_list)})'
+
         sqlstr = f'''select post_id id, tags from tags
 inner join posts on posts.id = post_id
 {tagsFilter}
@@ -61,9 +68,9 @@ having count(tags.tag) >= {len(tag_list)}
 order by random()
 limit ?'''
         c = conn.cursor()
-        print(sqlstr)
         c.execute(sqlstr, (limit, ))
         rows = c.fetchall()
+        c.close()
 
         results = []
         for row in rows:

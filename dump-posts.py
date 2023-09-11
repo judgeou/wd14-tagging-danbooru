@@ -2,6 +2,7 @@ import sqlite3
 import json
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
+import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 import time
 import threading
@@ -10,7 +11,7 @@ from PIL import Image
 import requests
 import app
 
-def getdb (dbname = 'images-tags.db'):
+def getdb (dbname = 'images-tags-rating_e.db'):
     conn = sqlite3.connect(dbname)
     conn.row_factory = sqlite3.Row
     return conn
@@ -55,7 +56,15 @@ def add_post (post):
 
     while True:
       try:
-        res = urlopen(sample_url)
+        req = urllib.request.Request(
+            sample_url, 
+            data=None, 
+            headers={
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_9_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.1916.47 Safari/537.36'
+            }
+        )
+
+        res = urllib.request.urlopen(req)
         sample_data = res.read()
         break
       except Exception as e:
@@ -80,6 +89,7 @@ def add_post (post):
           c.execute('INSERT INTO tags (post_id, tag) VALUES (?, ?)', (id, t))
 
         c2 = conn_data.cursor()
+        c2.execute('DELETE FROM images where id = ?', (id,))
         c2.execute('INSERT INTO images (id, data) VALUES (?, ?)', (id, sample_data))
         
         c.close()
@@ -98,6 +108,7 @@ def add_post_task (post):
    return add_post(post)
 
 def begin_dump (tags):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'}
     less_id = get_last_id()
 
     while True:
@@ -106,7 +117,7 @@ def begin_dump (tags):
         
       url = 'https://yande.re/post.json'
       params = { 'tags': tags + f' id:<{less_id}' }
-      response = requests.get(url, params=params)
+      response = requests.get(url, params=params,  headers=headers)
       data = response.json()
 
       with ThreadPoolExecutor(max_workers=4) as executor:
@@ -133,5 +144,5 @@ def split_image_data ():
          c2.execute('INSERT INTO images (id, data) VALUES (?,?)', (id, data))
       conn2.commit()
 
-begin_dump('rating:s')
+begin_dump('rating:e')
 # split_image_data()
