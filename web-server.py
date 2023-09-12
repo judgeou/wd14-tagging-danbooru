@@ -72,7 +72,7 @@ def random_1 ():
         post_id_list = []
 
         executeParams = paramValue + (limit, )
-        c.execute(f'select post_id from tags {tagsFilter} order by random() limit ? ', executeParams)
+        c.execute(f'select post_id from tags {tagsFilter} GROUP BY post_id HAVING count(1) = {len(paramValue)} order by random() limit ? ', executeParams)
         rows = c.fetchall()
 
         for row in rows:
