@@ -3,7 +3,8 @@ import { nextTick, ref } from 'vue'
 
 interface IPost {
   id: number,
-  tags: string
+  tags: string,
+  file_url: string
 }
 
 interface ITagsCompleteItem {
@@ -36,6 +37,26 @@ async function search () {
     posts.value = await res.json()
     
     img_src_loaded.value = posts.value
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
+async function search_random () {
+  try {
+    isLoading.value = true
+    img_src_loaded.value = []
+    posts.value = []
+
+    for (let i = 0; i < 8; i++) {
+      const res = await fetch(`/api/random/1?tags=${tag_input.value}&db=${databaseName.value}`)
+      const [ row ] = await res.json()
+      posts.value.push(row)
+      img_src_loaded.value.push(row)
+    }
+
   } catch (e) {
     console.error(e)
   } finally {
@@ -88,8 +109,8 @@ function back_top () {
       <option value="images-tags.db">images-tags.db</option>
       <option value="images-tags-rating_e.db">images-tags-rating_e.db</option>
     </select>
-    column: <input type="number" v-model="img_column" />
-    width: <input type="number" v-model="img_width" />
+    column: <input type="number" v-model="img_column" min="0" max="10" />
+    width: <input type="number" v-model="img_width" min="0" max="1000" />
     opacity:<input type="number" v-model="img_opacity" min="0" max="10" />
     blur:<input type="number" v-model="img_blur" min="0" max="100" />
   </div>
@@ -102,6 +123,7 @@ function back_top () {
 
   <div style="margin-top: 8px;">
     <button :disabled="isLoading" @click="search()" style="height: 30px;">Search</button>
+    <button :disabled="isLoading" @click="search_random()" style="height: 30px;">Random</button>
   </div>
 
   <div class="img-container">
