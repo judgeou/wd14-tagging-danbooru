@@ -29,16 +29,19 @@ def getdb (dbname = 'images-tags.db'):
 
 def get_tags_filterCount (tags = ''):
     tag_list = [n for n in tags.split(' ') if n.strip() != '']
-    tag_list = ["'" + item + "'" if isinstance(item, str) else item for item in tag_list]
+
+    paramValue = tuple()
     
     if len(tag_list) == 0:
         tagsFilter = ''
     elif len(tag_list) == 1:
-        tagsFilter = f'where tags.tag like "%{tags}%"'
+        tagsFilter = f'where tags.tag like ?'
+        paramValue = (f'%{tags.strip()}%', )
     elif len(tag_list) > 1:
-        tagsFilter = f'where tags.tag in ({", ".join(tag_list)})'
+        tagsFilter = f'where tags.tag in ({", ".join(["?" for _ in tag_list])})'
+        paramValue = tuple(tag_list)
     
-    return tagsFilter, len(tag_list)
+    return tagsFilter, paramValue
 
 @app.route('/<path:path>')
 def send_report(path):
@@ -59,25 +62,25 @@ def image(id: int):
 
 @app.route("/api/random/1")
 def random_1 ():
+    limit = request.args.get('limit', 20, int)
     tags = request.args.get('tags', '', str)
     dbName = request.args.get('db', 'images-tags.db', str)
     with getdb(dbName) as conn:
-        (tagsFilter, tagCount) = get_tags_filterCount(tags)
+        (tagsFilter, paramValue) = get_tags_filterCount(tags)
         c = conn.cursor()
-        c.execute('SELECT count(1) as c FROM posts')
-        row = c.fetchone()
-        count = row['c']
-        offset = rrr.randrange(0, count)
 
-        sqlstr = f'''select post_id id, tags, file_url from tags
-inner join posts on posts.id = post_id
-{tagsFilter}
-GROUP by post_id
-having count(tags.tag) >= {tagCount}
-limit 1 offset {offset}'''
+        post_id_list = []
+
+        executeParams = paramValue + (limit, )
+        c.execute(f'select post_id from tags {tagsFilter} order by random() limit ? ', executeParams)
+        rows = c.fetchall()
+
+        for row in rows:
+            post_id_list.append(row['post_id'])
+
+        sqlstr = f'select id, tags, file_url from posts where id in ({", ".join(map(str, post_id_list))})'
         c.execute(sqlstr)
         rows = c.fetchall()
-        c.close()
 
         results = []
         for row in rows:
@@ -87,6 +90,8 @@ limit 1 offset {offset}'''
                 "tags": tags,
                 "file_url": row["file_url"]
             })
+        
+        c.close()
 
         return results
 

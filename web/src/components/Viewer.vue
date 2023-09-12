@@ -33,7 +33,7 @@ async function search () {
   try {
     isLoading.value = true
 
-    const res = await fetch(`/api/random?tags=${tag_input.value}&db=${databaseName.value}`)
+    const res = await fetch(`/api/random/1?tags=${tag_input.value}&db=${databaseName.value}`)
     posts.value = await res.json()
     
     img_src_loaded.value = posts.value
@@ -53,8 +53,12 @@ async function search_random () {
     for (let i = 0; i < 8; i++) {
       const res = await fetch(`/api/random/1?tags=${tag_input.value}&db=${databaseName.value}`)
       const [ row ] = await res.json()
-      posts.value.push(row)
-      img_src_loaded.value.push(row)
+      if (row) {
+        posts.value.push(row)
+        img_src_loaded.value.push(row)
+      } else {
+        break
+      }
     }
 
   } catch (e) {
