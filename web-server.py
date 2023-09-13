@@ -1,4 +1,4 @@
-from flask import Flask, make_response, request, url_for, send_from_directory
+from flask import Flask, make_response, request, url_for, send_from_directory, abort
 import sqlite3
 import gradio as gr
 import random as rrr
@@ -60,6 +60,62 @@ def image(id: int):
 
     return res
 
+@app.route("/api/random/2")
+def random_2 ():
+    tags_param = request.args.get('tags', '女孩', str)
+    tags_param = tags_param if tags_param else '女孩'
+
+    dbName = request.args.get('db', 'images-tags.db', str)
+    tags_zh_list = tags_param.split(' ')
+    tags_zh_list = [item for item in tags_zh_list if item]
+
+    tag_list = ''
+
+    with getdb('danbooru-tag-zh.db') as conn_tag_zh:
+        c = conn_tag_zh.cursor()
+        c.execute(f'''select group_concat(tag, ' ') as tag_list from "tags" where tag_zh in ({", ".join(["?" for _ in tags_zh_list])})''', tuple(tags_zh_list))
+        row = c.fetchone()
+        tag_list = row['tag_list']
+        c.close()
+        if (tag_list is None):
+            abort(404)
+    
+        with getdb(dbName) as conn:
+            (tagsFilter, paramValue) = get_tags_filterCount(tag_list)
+            
+            c = conn.cursor()
+            executeParams = paramValue + (1, )
+            havingCondition = f'HAVING count(1) = {len(paramValue)}' if len(paramValue) > 0 else ''
+            c.execute(f'select post_id from tags {tagsFilter} GROUP BY post_id {havingCondition} order by random() limit ? ', executeParams)
+            row = c.fetchone()
+
+            if not row:
+                abort(404)
+
+            id = row['post_id']
+
+            c.execute('select id, tags, file_url from posts where id = ?', (id, ))
+            row = c.fetchone()
+            c.close()
+            tags = row['tags']
+            file_url = row["file_url"]
+            
+            tags_list = tags.split(',')
+            tags_list = [s.strip() for s in tags_list]
+
+            c = conn_tag_zh.cursor()
+            c.execute(f'''select group_concat(tag_zh, ' ') tags_zh from tags where tag in ({", ".join(["?" for _ in tags_list])})''', tuple(tags_list))
+            row = c.fetchone()
+            tags_zh = row['tags_zh']
+            c.close()
+
+            return {
+                "id": id,
+                "tags": tags,
+                "tags_zh": tags_zh,
+                "file_url": file_url
+            }
+
 @app.route("/api/random/1")
 def random_1 ():
     limit = request.args.get('limit', 20, int)
@@ -72,7 +128,8 @@ def random_1 ():
         post_id_list = []
 
         executeParams = paramValue + (limit, )
-        c.execute(f'select post_id from tags {tagsFilter} GROUP BY post_id HAVING count(1) = {len(paramValue)} order by random() limit ? ', executeParams)
+        havingCondition = f'HAVING count(1) = {len(paramValue)}' if len(paramValue) > 0 else ''
+        c.execute(f'select post_id from tags {tagsFilter} GROUP BY post_id {havingCondition} order by random() limit ? ', executeParams)
         rows = c.fetchall()
 
         for row in rows:

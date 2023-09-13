@@ -138,7 +138,8 @@ function back_top () {
 
       <div class="links">
         <a href="javascript:;" @click="copy_img_tags(post)">copy</a>
-        <a target="_blank" :href="`https://yande.re/post/show/${post.id}`">open</a>
+        <a target="_blank" :href="`https://yande.re/post/show/${post.id}`" >open</a>
+        <a target="_blank" :href="post.file_url" rel="noreferrer">raw</a>
       </div>
     </div>
   </div>
