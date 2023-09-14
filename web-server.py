@@ -136,15 +136,19 @@ def random_2 ():
             tags_list = [s.strip() for s in tags_list]
 
             c = conn_tag_zh.cursor()
-            c.execute(f'''select group_concat(tag_zh, ' ') tags_zh from tags where tag in ({", ".join(["?" for _ in tags_list])})''', tuple(tags_list))
+            c.execute(f'''select group_concat(tag_zh, ' ') tags_zh, group_concat(tag, ',') tags_en from tags where tag in ({", ".join(["?" for _ in tags_list])})''', tuple(tags_list))
             row = c.fetchone()
             tags_zh = row['tags_zh']
+            tags_en = row['tags_en']
+            tags_en_list = tags_en.split(',')
+            tags_not_in_zh = set(tags_list) - set(tags_en_list)
+            row = c.fetchone()
             c.close()
 
             return {
                 "id": id,
                 "tags": tags,
-                "tags_zh": tags_zh,
+                "tags_zh": tags_zh + ' ' + ' '.join(tags_not_in_zh),
                 "file_url": file_url
             }
 
