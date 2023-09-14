@@ -2,7 +2,7 @@ from flask import Flask, make_response, request, url_for, send_from_directory, a
 import sqlite3
 import gradio as gr
 import random as rrr
-from PIL import Image
+from PIL import Image, ImageFilter
 import io
 
 app = Flask(__name__)
@@ -43,6 +43,29 @@ def get_tags_filterCount (tags = ''):
     
     return tagsFilter, paramValue
 
+def add_single_quotes_to_csv_elements(input_string):
+    elements = input_string.split(',')
+    result_string = ','.join(f"'{element}'" for element in elements)
+    return result_string
+
+def get_tags_zh_filter (tags_zh = ''):
+    tags_zh_list = tags_zh.split(' ')
+    tags_zh_list = [item for item in tags_zh_list if item]
+
+    with getdb('danbooru-tag-zh.db') as conn:
+        c = conn.cursor()
+        c.execute(f'''select group_concat(tag, ',') tag_group, tag_zh, count(1) c from tags where tag_zh in ({", ".join(["?" for _ in tags_zh_list])}) group by tag_zh''', tuple(tags_zh_list))
+        rows = c.fetchall()
+
+        if rows is None:
+            return (None,0)
+
+        condition_list = []
+        for row in rows:
+            condition_list.append(add_single_quotes_to_csv_elements(row['tag_group']))
+        
+        return (' tags.tag in (' + ','.join(condition_list) + ')', len(rows))
+
 @app.route('/<path:path>')
 def send_report(path):
     return send_from_directory('web/dist', path)
@@ -55,8 +78,19 @@ def image(id: int):
         data = c.fetchone()['data']
         c.close()
 
-    res = make_response(data)
-    res.headers['Content-Type'] = 'image/jpeg'
+    blur_value = request.args.get('blur', None, str)
+    if blur_value:
+        image = Image.open(io.BytesIO(data))
+        blur = ImageFilter.GaussianBlur(radius=int(blur_value))
+        image = image.filter(blur)
+        image_io = io.BytesIO()
+        image.save(image_io, 'JPEG')  # You can choose the format you want (PNG, JPEG, etc.)
+        image_io.seek(0)
+        res = make_response(image_io)
+        res.headers['Content-Type'] = 'image/jpeg'
+    else:
+        res = make_response(data)
+        res.headers['Content-Type'] = 'image/jpeg'
 
     return res
 
@@ -66,27 +100,15 @@ def random_2 ():
     tags_param = tags_param if tags_param else '女孩'
 
     dbName = request.args.get('db', 'images-tags.db', str)
-    tags_zh_list = tags_param.split(' ')
-    tags_zh_list = [item for item in tags_zh_list if item]
-
-    tag_list = ''
 
     with getdb('danbooru-tag-zh.db') as conn_tag_zh:
-        c = conn_tag_zh.cursor()
-        c.execute(f'''select group_concat(tag, ' ') as tag_list from "tags" where tag_zh in ({", ".join(["?" for _ in tags_zh_list])})''', tuple(tags_zh_list))
-        row = c.fetchone()
-        tag_list = row['tag_list']
-        c.close()
-        if (tag_list is None):
-            abort(404)
     
         with getdb(dbName) as conn:
-            (tagsFilter, paramValue) = get_tags_filterCount(tag_list)
+            (tagsFilter, haveCount) = get_tags_zh_filter(tags_param)
             
             c = conn.cursor()
-            executeParams = paramValue + (1, )
-            havingCondition = f'HAVING count(1) = {len(paramValue)}' if len(paramValue) > 0 else ''
-            c.execute(f'select post_id from tags {tagsFilter} GROUP BY post_id {havingCondition} order by random() limit ? ', executeParams)
+            sqlstr = f'select post_id from tags where {tagsFilter} group by post_id having count(1) >= {haveCount} order by random() limit ? '
+            c.execute(sqlstr, (1,))
             row = c.fetchone()
 
             if not row:

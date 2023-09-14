@@ -11,7 +11,7 @@ from PIL import Image
 import requests
 import app
 
-def getdb (dbname = 'images-tags-rating_e.db'):
+def getdb (dbname = 'images-tags.db'):
     conn = sqlite3.connect(dbname)
     conn.row_factory = sqlite3.Row
     return conn
@@ -144,5 +144,5 @@ def split_image_data ():
          c2.execute('INSERT INTO images (id, data) VALUES (?,?)', (id, data))
       conn2.commit()
 
-begin_dump('rating:e')
+begin_dump('rating:s')
 # split_image_data()
