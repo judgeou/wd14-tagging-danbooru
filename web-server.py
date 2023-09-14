@@ -50,11 +50,12 @@ def add_single_quotes_to_csv_elements(input_string):
 
 def get_tags_zh_filter (tags_zh = ''):
     tags_zh_list = tags_zh.split(' ')
-    tags_zh_list = [item for item in tags_zh_list if item]
+    tags_zh_list_chs = [item for item in tags_zh_list if not item.isascii()]
+    tags_zh_list_ascii = [item for item in tags_zh_list if item.isascii()]
 
     with getdb('danbooru-tag-zh.db') as conn:
         c = conn.cursor()
-        c.execute(f'''select group_concat(tag, ',') tag_group, tag_zh, count(1) c from tags where tag_zh in ({", ".join(["?" for _ in tags_zh_list])}) group by tag_zh''', tuple(tags_zh_list))
+        c.execute(f'''select group_concat(tag, ',') tag_group, tag_zh, count(1) c from tags where tag_zh in ({", ".join(["?" for _ in tags_zh_list_chs])}) group by tag_zh''', tuple(tags_zh_list_chs))
         rows = c.fetchall()
 
         if rows is None:
@@ -63,12 +64,20 @@ def get_tags_zh_filter (tags_zh = ''):
         condition_list = []
         for row in rows:
             condition_list.append(add_single_quotes_to_csv_elements(row['tag_group']))
+
+        for row in tags_zh_list_ascii:
+            r = row.replace('(', '\\(').replace(')', '\\)')
+            condition_list.append(f"'{r}'")
         
-        return (' tags.tag in (' + ','.join(condition_list) + ')', len(rows))
+        return (' tags.tag in (' + ','.join(condition_list) + ')', len(rows) + len(tags_zh_list_ascii))
 
 @app.route('/<path:path>')
 def send_report(path):
     return send_from_directory('web/dist', path)
+
+@app.route("/api/add-tag-zh", methods=['POST'])
+def add_tag_zh ():
+    data = request.get_json()
 
 @app.route("/api/image/<int:id>")
 def image(id: int):
@@ -108,6 +117,7 @@ def random_2 ():
             
             c = conn.cursor()
             sqlstr = f'select post_id from tags where {tagsFilter} group by post_id having count(1) >= {haveCount} order by random() limit ? '
+            print(sqlstr)
             c.execute(sqlstr, (1,))
             row = c.fetchone()
 
