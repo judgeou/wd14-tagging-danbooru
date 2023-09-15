@@ -136,6 +136,24 @@ def image(id: int):
 
     return res
 
+@app.route("/api/random/score")
+def random_score ():
+    score = request.args.get('score', 100, int)
+    dbName = request.args.get('db', 'images-tags.db', str)
+
+    with getdb(dbName) as conn:
+        c = conn.cursor()
+        c.execute('select id, tags, file_url from posts where score >= ? order by random() limit 1', (score,))
+        row = c.fetchone()
+        if (row is None):
+            abort(404)
+        else:
+            return {
+                'id': row['id'],
+                'file_url': row['file_url']
+            }
+
+
 @app.route("/api/random/2")
 def random_2 ():
     tags_param = request.args.get('tags', '女孩', str)
