@@ -75,6 +75,39 @@ def get_tags_zh_filter (tags_zh = ''):
 def send_report(path):
     return send_from_directory('web/dist', path)
 
+@app.route("/api/search/tag")
+def search_tag ():
+    tag = request.args.get('tag', '', str)
+    tag_p = f'%{tag}%'
+    with getdb('images-tags.db') as conn:
+        c = conn.cursor()
+        
+        if tag.isascii():
+            c.execute(f'''
+SELECT tag from tags
+where tag like ?
+GROUP by tag
+limit 20
+''', (tag_p, ))
+        else:
+            c.execute(f'''
+SELECT dan_zh.tag_zh tag from dan_zh
+INNER join tags ttt on ttt.tag = dan_zh.tag
+where dan_zh.tag_zh like ?
+GROUP by dan_zh.tag_zh
+limit 20
+''', (tag_p,))
+            
+        rows = c.fetchall()
+        c.close()
+
+        result = []
+        for row in rows:
+            result.append({
+                'tag': row['tag'].replace('\\(', '(').replace('\\)', ')')
+            })
+        return result
+
 @app.route("/api/add-tag-zh", methods=['POST'])
 def add_tag_zh ():
     data = request.get_json()
@@ -148,7 +181,7 @@ def random_2 ():
             return {
                 "id": id,
                 "tags": tags,
-                "tags_zh": tags_zh + ' ' + ' '.join(tags_not_in_zh),
+                "tags_zh": (tags_zh + ' ' + ' '.join(tags_not_in_zh)).replace('\\(', '(').replace('\\)', ')'),
                 "file_url": file_url
             }
 
