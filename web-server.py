@@ -4,6 +4,7 @@ import gradio as gr
 import random as rrr
 from PIL import Image, ImageFilter
 import io
+import numpy as np
 
 app = Flask(__name__)
 
@@ -70,6 +71,18 @@ def get_tags_zh_filter (tags_zh = ''):
             condition_list.append(f"'{r}'")
         
         return (' tags.tag in (' + ','.join(condition_list) + ')', len(rows) + len(tags_zh_list_ascii))
+    
+def reverse_phase(image: Image.Image):
+    # Convert the input image to a NumPy array
+    image_array = np.array(image)
+
+    # Reverse the phase by subtracting the array from the maximum (255 for uint8)
+    reversed_array = 255 - image_array
+
+    # Create a new PIL image from the reversed NumPy array
+    reversed_image = Image.fromarray(reversed_array)
+
+    return reversed_image
 
 @app.route('/<path:path>')
 def send_report(path):
@@ -121,18 +134,31 @@ def image(id: int):
         c.close()
 
     blur_value = request.args.get('blur', None, str)
-    if blur_value:
-        image = Image.open(io.BytesIO(data))
-        blur = ImageFilter.GaussianBlur(radius=int(blur_value))
-        image = image.filter(blur)
-        image_io = io.BytesIO()
-        image.save(image_io, 'JPEG')  # You can choose the format you want (PNG, JPEG, etc.)
-        image_io.seek(0)
-        res = make_response(image_io)
-        res.headers['Content-Type'] = 'image/jpeg'
-    else:
+    reverse_value = request.args.get('reverse', None, str)
+
+    if (not blur_value) and (not reverse_value):
         res = make_response(data)
         res.headers['Content-Type'] = 'image/jpeg'
+    else:
+        if blur_value:
+            image = Image.open(io.BytesIO(data))
+            blur = ImageFilter.GaussianBlur(radius=int(blur_value))
+            image = image.filter(blur)
+            image_io = io.BytesIO()
+            image.save(image_io, 'JPEG')  # You can choose the format you want (PNG, JPEG, etc.)
+            image_io.seek(0)
+            res = make_response(image_io)
+            res.headers['Content-Type'] = 'image/jpeg'
+        if reverse_value:
+            image = Image.open(io.BytesIO(data))
+            image = reverse_phase(image)
+            image_io = io.BytesIO()
+            image.save(image_io, 'JPEG')
+            image_io.seek(0)
+            res = make_response(image_io)
+            res.headers['Content-Type'] = 'image/jpeg'
+    
+
 
     return res
 
