@@ -25,6 +25,14 @@ def get_last_id ():
       row = c.fetchone()
       c.close()
       return row['id']
+   
+def get_newest_id ():
+   with getdb() as conn:
+      c = conn.cursor()
+      c.execute('SELECT MAX(id) as id from posts')
+      row = c.fetchone()
+      c.close()
+      return row['id']
 
 def get_post (id):
     with getdb() as conn:
@@ -84,6 +92,7 @@ def add_post (post):
                   (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags))
         
         tag_list = tags.split(',')
+        c.execute('DELETE FROM tags where post_id = ?', (id,))
         for tag in tag_list:
           t = tag.strip()
           c.execute('INSERT INTO tags (post_id, tag) VALUES (?, ?)', (id, t))
@@ -128,6 +137,28 @@ def begin_dump (tags):
              less_id = r
           print(f'done: {r}')
 
+def begin_dump_new (tags):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'}
+    newest_id = get_newest_id()
+
+    while True:
+
+      url = 'https://yande.re/post.json'
+      params = { 'tags': tags + f' id:>{newest_id} order:id' }
+      response = requests.get(url, params=params,  headers=headers)
+      data = response.json()
+
+      if (len(data) == 0):
+         break
+
+      with ThreadPoolExecutor(max_workers=4) as executor:
+        results = executor.map(add_post_task, data)
+
+        for r in results:
+          if r > newest_id:
+             newest_id = r
+          print(f'done: {r}')
+
 def split_image_data ():
    with getdb() as conn1, getdb('images-data.db') as conn2:
       c1 = conn1.cursor()
@@ -144,5 +175,6 @@ def split_image_data ():
          c2.execute('INSERT INTO images (id, data) VALUES (?,?)', (id, data))
       conn2.commit()
 
-begin_dump('rating:s')
+# begin_dump('rating:s')
+begin_dump_new('rating:s')
 # split_image_data()
