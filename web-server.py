@@ -49,28 +49,62 @@ def add_single_quotes_to_csv_elements(input_string):
     result_string = ','.join(f"'{element}'" for element in elements)
     return result_string
 
-def get_tags_zh_filter (tags_zh = ''):
-    tags_zh_list = tags_zh.split(' ')
-    tags_zh_list_chs = [item for item in tags_zh_list if not item.isascii()]
-    tags_zh_list_ascii = [item for item in tags_zh_list if item.isascii()]
+def get_question_mark_str (arr = []):
+    return ", ".join(["?" for _ in arr])
+
+def get_tag_by_zh (tag_zh = ''):
+    if (tag_zh.isascii()):
+        return [ tag_zh ]
+    
+    with getdb('danbooru-tag-zh.db') as conn:
+        c = conn.cursor()
+        c.execute(f'SELECT tag FROM tags where tag_zh = ?', (tag_zh, ))
+        rows = c.fetchall()
+        c.close()
+        result = []
+        for row in rows:
+            result.append(row['tag'])
+        return result
+
+def get_tag_group_str (tags = ''):
+    tags_zh_list_chs = [item for item in tags if not item.isascii()]
 
     with getdb('danbooru-tag-zh.db') as conn:
         c = conn.cursor()
         c.execute(f'''select group_concat(tag, ',') tag_group, tag_zh, count(1) c from tags where tag_zh in ({", ".join(["?" for _ in tags_zh_list_chs])}) group by tag_zh''', tuple(tags_zh_list_chs))
         rows = c.fetchall()
-
-        if rows is None:
-            return (None,0)
-
-        condition_list = []
+        result = []
         for row in rows:
-            condition_list.append(add_single_quotes_to_csv_elements(row['tag_group']))
+            result.append(row['tag_group'])
+        return result
 
-        for row in tags_zh_list_ascii:
-            r = row.replace('(', '\\(').replace(')', '\\)')
-            condition_list.append(f"'{r}'")
-        
-        return (' tags.tag in (' + ','.join(condition_list) + ')', len(rows) + len(tags_zh_list_ascii))
+def get_tags_zh_filter (tags_zh = '', tags_zh_or = ''):
+    tags_zh_list = tags_zh.split(' ')
+    tags_zh_list_or = [] if len(tags_zh_or) == 0 else tags_zh_or.split(' ')
+
+    condition_sql_list = []
+    param_list = []
+    i = 1
+
+    for tags_zh in tags_zh_list:
+        tags = get_tag_by_zh(tags_zh)
+        condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND t{i}.tag in ({get_question_mark_str(tags)})')
+        param_list += tags
+        i += 1
+    
+    tags_list_or = []
+
+    for tags_zh_or in tags_zh_list_or:
+        tags_or = get_tag_by_zh(tags_zh_or)
+        tags_list_or += tags_or
+
+    if len(tags_list_or) > 0:
+        condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND t{i}.tag in ({get_question_mark_str(tags_list_or)})')
+        param_list += tags_list_or
+        i += 1
+
+    condition_sql = '\n' + '\n'.join(condition_sql_list)
+    return (condition_sql, param_list)
     
 def reverse_phase(image: Image.Image):
     # Convert the input image to a NumPy array
@@ -183,6 +217,7 @@ def random_score ():
 @app.route("/api/random/2")
 def random_2 ():
     tags_param = request.args.get('tags', '女孩', str)
+    tags_param_or = request.args.get('tags_or', '', str)
     tags_param = tags_param if tags_param else '女孩'
 
     dbName = request.args.get('db', 'images-tags.db', str)
@@ -190,12 +225,12 @@ def random_2 ():
     with getdb('danbooru-tag-zh.db') as conn_tag_zh:
     
         with getdb(dbName) as conn:
-            (tagsFilter, haveCount) = get_tags_zh_filter(tags_param)
+            (tagsFilter, filter_param_list) = get_tags_zh_filter(tags_param, tags_param_or)
             
             c = conn.cursor()
-            sqlstr = f'select post_id from tags where {tagsFilter} group by post_id having count(1) >= {haveCount} order by random() limit ? '
-            print(sqlstr)
-            c.execute(sqlstr, (1,))
+            sqlstr = f'SELECT tags.post_id FROM tags {tagsFilter} GROUP BY tags.post_id ORDER by random() limit ?'
+            print(filter_param_list)
+            c.execute(sqlstr, tuple(filter_param_list) + (1,))
             row = c.fetchone()
 
             if not row:
@@ -203,11 +238,12 @@ def random_2 ():
 
             id = row['post_id']
 
-            c.execute('select id, tags, file_url from posts where id = ?', (id, ))
+            c.execute('select id, tags, file_url, score from posts where id = ?', (id, ))
             row = c.fetchone()
             c.close()
             tags = row['tags']
             file_url = row["file_url"]
+            score = row['score']
             
             tags_list = tags.split(',')
             tags_list = [s.strip() for s in tags_list]
@@ -226,7 +262,8 @@ def random_2 ():
                 "id": id,
                 "tags": tags,
                 "tags_zh": (tags_zh + ' ' + ' '.join(tags_not_in_zh)).replace('\\(', '(').replace('\\)', ')'),
-                "file_url": file_url
+                "file_url": file_url,
+                "score": score
             }
 
 @app.route("/api/random/1")
