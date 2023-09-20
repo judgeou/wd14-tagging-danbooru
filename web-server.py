@@ -78,9 +78,10 @@ def get_tag_group_str (tags = ''):
             result.append(row['tag_group'])
         return result
 
-def get_tags_zh_filter (tags_zh = '', tags_zh_or = ''):
+def get_tags_zh_filter (tags_zh = '', tags_zh_or = '', tags_like = ''):
     tags_zh_list = tags_zh.split(' ')
     tags_zh_list_or = [] if len(tags_zh_or) == 0 else tags_zh_or.split(' ')
+    tags_list_like = [] if len(tags_like) == 0 else tags_like.split(' ')
 
     condition_sql_list = []
     param_list = []
@@ -90,6 +91,11 @@ def get_tags_zh_filter (tags_zh = '', tags_zh_or = ''):
         tags = get_tag_by_zh(tags_zh)
         condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND t{i}.tag in ({get_question_mark_str(tags)})')
         param_list += tags
+        i += 1
+
+    for tags_like in tags_list_like:
+        condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND t{i}.tag like ?')
+        param_list.append(tags_like)
         i += 1
     
     tags_list_or = []
@@ -218,6 +224,7 @@ def random_score ():
 def random_2 ():
     tags_param = request.args.get('tags', '女孩', str)
     tags_param_or = request.args.get('tags_or', '', str)
+    tags_param_like = request.args.get('tags_like', '', str)
     tags_param = tags_param if tags_param else '女孩'
 
     dbName = request.args.get('db', 'images-tags.db', str)
@@ -225,7 +232,7 @@ def random_2 ():
     with getdb('danbooru-tag-zh.db') as conn_tag_zh:
     
         with getdb(dbName) as conn:
-            (tagsFilter, filter_param_list) = get_tags_zh_filter(tags_param, tags_param_or)
+            (tagsFilter, filter_param_list) = get_tags_zh_filter(tags_param, tags_param_or, tags_param_like)
             
             c = conn.cursor()
             sqlstr = f'SELECT tags.post_id FROM tags {tagsFilter} GROUP BY tags.post_id ORDER by random() limit ?'
