@@ -52,6 +52,14 @@ def add_single_quotes_to_csv_elements(input_string):
 def get_question_mark_str (arr = []):
     return ", ".join(["?" for _ in arr])
 
+def strip_list (str_list = []):
+    stripped_list = [s.strip() for s in str_list]
+    return stripped_list
+
+def remove_blank (str_list = []):
+    result = [s for s in str_list if s.strip()]
+    return result
+
 def get_tag_by_zh (tag_zh = ''):
     if (tag_zh.isascii()):
         return [ tag_zh ]
@@ -80,8 +88,8 @@ def get_tag_group_str (tags = ''):
 
 def get_tags_zh_filter (tags_zh = '', tags_zh_or = '', tags_like = ''):
     tags_zh_list = tags_zh.split(' ')
-    tags_zh_list_or = [] if len(tags_zh_or) == 0 else tags_zh_or.split(' ')
-    tags_list_like = [] if len(tags_like) == 0 else tags_like.split(' ')
+    tags_zh_list_or = [] if len(tags_zh_or) == 0 else remove_blank(tags_zh_or.split(' '))
+    tags_list_like = [] if len(tags_like) == 0 else remove_blank(tags_like.split(' '))
 
     condition_sql_list = []
     param_list = []
@@ -97,17 +105,19 @@ def get_tags_zh_filter (tags_zh = '', tags_zh_or = '', tags_like = ''):
         condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND t{i}.tag like ?')
         param_list.append(tags_like)
         i += 1
-    
-    tags_list_or = []
+
+    like_list = []
 
     for tags_zh_or in tags_zh_list_or:
         tags_or = get_tag_by_zh(tags_zh_or)
-        tags_list_or += tags_or
 
-    if len(tags_list_or) > 0:
-        condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND t{i}.tag in ({get_question_mark_str(tags_list_or)})')
-        param_list += tags_list_or
-        i += 1
+        for tags_or_item in tags_or:
+            like_list.append(f't{i}.tag like ?')
+            param_list.append(tags_or_item)
+    
+    like_list_sql = ' or '.join(like_list) 
+    condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND ({like_list_sql})')
+    i += 1
 
     condition_sql = '\n' + '\n'.join(condition_sql_list)
     return (condition_sql, param_list)
@@ -236,6 +246,7 @@ def random_2 ():
             
             c = conn.cursor()
             sqlstr = f'SELECT tags.post_id FROM tags {tagsFilter} GROUP BY tags.post_id ORDER by random() limit ?'
+            print(sqlstr)
             print(filter_param_list)
             c.execute(sqlstr, tuple(filter_param_list) + (1,))
             row = c.fetchone()
