@@ -115,9 +115,10 @@ def get_tags_zh_filter (tags_zh = '', tags_zh_or = '', tags_like = ''):
             like_list.append(f't{i}.tag like ?')
             param_list.append(tags_or_item)
     
-    like_list_sql = ' or '.join(like_list) 
-    condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND ({like_list_sql})')
-    i += 1
+    if (len(tags_zh_list_or) > 0):
+        like_list_sql = ' or '.join(like_list) 
+        condition_sql_list.append(f'JOIN tags t{i} ON t{i}.post_id = tags.post_id AND ({like_list_sql})')
+        i += 1
 
     condition_sql = '\n' + '\n'.join(condition_sql_list)
     return (condition_sql, param_list)
