@@ -8,7 +8,6 @@ import numpy as np
 import json
 import psycopg2
 from psycopg2.extras import RealDictCursor
-import traceback
 
 app = Flask(__name__)
 
@@ -28,6 +27,15 @@ def replaceTags (str):
         str = str.replace(pair[0], pair[1])
     f.close()
     return str
+
+def remvoe_duplicate (arr: list):
+    unique_list = []
+
+    for item in arr:
+        if item not in unique_list:
+            unique_list.append(item)
+
+    return unique_list
 
 def getdb (dbname = 'images-tags.db'):
     conn = sqlite3.connect(dbname)
@@ -241,6 +249,8 @@ def random_3 ():
     and_array = json_data['and_array']
     or_array = json_data['or_array']
     limit = json_data['limit'] if 'limit' in json_data else 1
+
+    and_array = remvoe_duplicate(and_array)
     
     with pg_conn.cursor() as c:
         try:

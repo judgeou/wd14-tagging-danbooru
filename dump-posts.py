@@ -10,6 +10,11 @@ from io import BytesIO
 from PIL import Image
 import requests
 import app
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+pg_conn = psycopg2.connect("dbname=postgres user=dan", cursor_factory=RealDictCursor)
+rating = 'e'
 
 def getdb (dbname = 'images-tags.db'):
     conn = sqlite3.connect(dbname)
@@ -19,30 +24,27 @@ def getdb (dbname = 'images-tags.db'):
 lock = threading.Lock()
 
 def get_last_id ():
-   with getdb() as conn:
-      c = conn.cursor()
-      c.execute('SELECT MIN(id) as id from posts')
-      row = c.fetchone()
-      c.close()
-      return row['id']
+   c = pg_conn.cursor()
+   c.execute(f'SELECT MIN(id) as id from posts_{rating}')
+   row = c.fetchone()
+   c.close()
+   return row['id']
    
 def get_newest_id ():
-   with getdb() as conn:
-      c = conn.cursor()
-      c.execute('SELECT MAX(id) as id from posts')
-      row = c.fetchone()
-      c.close()
-      return row['id']
+   c = pg_conn.cursor()
+   c.execute(f'SELECT MAX(id) as id from posts_{rating}')
+   row = c.fetchone()
+   c.close()
+   return row['id']
 
 def get_post (id):
-    with getdb() as conn:
-      c = conn.cursor()
+    c = pg_conn.cursor()
 
-      c.execute('SELECT * FROM posts where id = ?', (id,))
-      row = c.fetchone()
-      c.close()
+    c.execute(f'SELECT * FROM posts_{rating} where id = %s', (id,))
+    row = c.fetchone()
+    c.close()
 
-      return row
+    return row
 
 def add_post (post):
     if ('sample_url' not in post):
@@ -85,24 +87,31 @@ def add_post (post):
     tags = app.image_to_wd14_tags(image, 'wd14-convnext', 0.35, False, True, False, True)
 
     with lock:
-      with getdb() as conn, getdb('images-data.db') as conn_data:
-        c = conn.cursor()
+      with getdb('images-data.db') as conn_data:
+        c = pg_conn.cursor()
 
-        c.execute(f'INSERT INTO posts (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags) VALUES (?,?,?,?,?,?,?,?,?)', 
+        c.execute(f'INSERT INTO posts_{rating} (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)', 
                   (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags))
         
         tag_list = tags.split(',')
-        c.execute('DELETE FROM tags where post_id = ?', (id,))
+
         for tag in tag_list:
           t = tag.strip()
-          c.execute('INSERT INTO tags (post_id, tag) VALUES (?, ?)', (id, t))
+          c.execute(f'SELECT id from tags_{rating} where tag = %s', (t,))
+          row = c.fetchone()
+          
+          if row is None:
+             c.execute(f'INSERT INTO tags_{rating} (tag) values (%s) RETURNING id;', (t,))
+             row = c.fetchone()
+          
+          c.execute(f'INSERT INTO post_tag_{rating} (post_id, tag_id) values (%s, %s)', (id, row['id']))
 
         c2 = conn_data.cursor()
         c2.execute('DELETE FROM images where id = ?', (id,))
         c2.execute('INSERT INTO images (id, data) VALUES (?, ?)', (id, sample_data))
         
         c.close()
-        conn.commit()
+        pg_conn.commit()
         c2.close()
         conn_data.commit()
 
@@ -176,5 +185,5 @@ def split_image_data ():
       conn2.commit()
 
 # begin_dump('rating:s')
-begin_dump_new('rating:s')
+begin_dump_new('rating:e')
 # split_image_data()

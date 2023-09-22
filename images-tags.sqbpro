@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?><sqlb_project><db path="F:/project/wd14-tagging-danbooru/images-tags-rating_e.db" readonly="0" foreign_keys="" case_sensitive_like="" temp_store="" wal_autocheckpoint="" synchronous=""/><attached/><window><main_tabs open="browser query structure pragmas" current="2"/></window><tab_structure><column_width id="0" width="300"/><column_width id="1" width="0"/><column_width id="2" width="125"/><column_width id="3" width="2058"/><column_width id="4" width="0"/></tab_structure><tab_browse><current_table name="0,0:"/><default_encoding codec=""/><browse_table_settings/></tab_browse><tab_sql><sql name="SQL 1">select * from tags2 t2 where ( t2.tag like 'raiden_shogun' or t2.tag like 'kamisato_ayaka' or t2.tag like 'sangonomiya_kokomi' or t2.tag like '%\(genshin_impact\)')</sql><sql name="SQL 3">select count(1), tags.tag, tag_zh from tags
+left join dan_zh on dan_zh.tag = tags.tag
+where tags.tag like '%princ%'
+ GROUP by tags.tag
+ order by count(1) desc</sql><sql name="get_tag_by_zh">select id from tags2 where tag_zh like '裤袜'</sql><sql name="insert post_tag">INSERT INTO post_tag (post_id,tag_id)
+select t1.post_id, t2.id as tag_id from tags t1
+INNER join tags2 t2 on t2.tag = t1.tag
+</sql><sql name="update zh">UPDATE tags2
+SET tag_zh = (select dan_zh.tag_zh from dan_zh where dan_zh.tag = tags2.tag limit 1)
+where tags2.tag_zh is null</sql><sql name="SQL 12">select pt.post_id from post_tag pt
+inner join post_tag pt1 on pt1.post_id = pt.post_id and pt1.tag_id = 13
+inner join post_tag pt2 on pt2.post_id = pt.post_id and pt2.tag_id = 6869
+inner join post_tag pt3 on pt3.post_id = pt.post_id and pt3.tag_id = 13
+inner join post_tag pt4 on pt4.post_id = pt.post_id and pt4.tag_id = 6869
+inner join post_tag pt5 on pt5.post_id = pt.post_id and pt5.tag_id = 4415
+inner join post_tag pt6 on pt6.post_id = pt.post_id and pt6.tag_id = 4419
+inner join post_tag pt7 on pt7.post_id = pt.post_id and pt7.tag_id in (187, 382, 430, 452, 485, 486, 521, 3145, 3146, 3256, 3257, 3264, 3302, 3303, 3508, 3661, 3695, 3842, 3843, 3872, 3991, 4449, 4592, 4601, 4684, 4714, 4867, 4994, 5070, 6437, 6558, 6559, 6630, 7743, 8343)
+group by pt.post_id
+order by random()
+limit 1</sql><current_tab id="5"/></tab_sql></sqlb_project>

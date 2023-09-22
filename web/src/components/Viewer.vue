@@ -24,17 +24,36 @@ const img_column = ref(3)
 const img_width = ref(250)
 const img_opacity = ref(10)
 const img_blur = ref(0)
-const databaseName = ref('images-tags.db')
+const databaseName = ref('s')
 const tags_complete_items = ref([] as ITagsCompleteItem[])
 const el_taginput = ref<HTMLInputElement>()
 const img_src_loaded = ref([] as IPost[])
+
+async function post_json (path: string, data: any) {
+  const headers = {
+    'Content-Type': 'application/json'
+  };
+
+  const res = await fetch(path, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data)
+  })
+
+  return res.json()
+}
 
 async function search () {
   try {
     isLoading.value = true
 
-    const res = await fetch(`/api/random/1?tags=${tag_input.value}&db=${databaseName.value}`)
-    posts.value = await res.json()
+    const res = await post_json(`/api/random/3`, {
+      rating: databaseName.value,
+      and_array: tag_input.value.split(' ').map(item => item.trim()),
+      or_array: [],
+      limit: 20
+    })
+    posts.value = res
     
     img_src_loaded.value = posts.value
   } catch (e) {
@@ -110,8 +129,8 @@ function back_top () {
 
     <input ref="el_taginput" type="text" placeholder="tags" v-model="tag_input" style="width: 300px;" @input="trigger_complete">
     <select v-model="databaseName">
-      <option value="images-tags.db">images-tags.db</option>
-      <option value="images-tags-rating_e.db">images-tags-rating_e.db</option>
+      <option value="s">Safe</option>
+      <option value="e">Ex</option>
     </select>
     column: <input type="number" v-model="img_column" min="0" max="10" />
     width: <input type="number" v-model="img_width" min="0" max="1000" />
