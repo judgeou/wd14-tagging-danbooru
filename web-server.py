@@ -5,8 +5,14 @@ import random as rrr
 from PIL import Image, ImageFilter
 import io
 import numpy as np
+import json
+import psycopg2
+from psycopg2.extras import RealDictCursor
+import traceback
 
 app = Flask(__name__)
+
+pg_conn = psycopg2.connect("dbname=postgres user=dan", cursor_factory=RealDictCursor)
 
 def excludeTags (str):
     f = open('exclude.txt', 'r')
@@ -72,6 +78,22 @@ def get_tag_by_zh (tag_zh = ''):
         result = []
         for row in rows:
             result.append(row['tag'])
+        return result
+
+def get_tagid_by_zh (tag_zh: str, rating: str):
+    with pg_conn.cursor() as c:
+        result = []
+        tag_zh = tag_zh.replace('\\', '\\\\')
+
+        if (tag_zh.isascii()):
+            c.execute(f'select id from tags_{rating} where tag like %s', (tag_zh,))
+            rows = c.fetchall()
+            result = [ item['id'] for item in rows ]
+        else:
+            c.execute(f'select id from tags_{rating} where tag_zh like %s', (tag_zh,))
+            rows = c.fetchall()
+            result = [ item['id'] for item in rows ]
+
         return result
 
 def get_tag_group_str (tags = ''):
@@ -172,9 +194,6 @@ limit 20
             })
         return result
 
-@app.route("/api/add-tag-zh", methods=['POST'])
-def add_tag_zh ():
-    data = request.get_json()
 
 @app.route("/api/image/<int:id>")
 def image(id: int):
@@ -213,77 +232,70 @@ def image(id: int):
 
     return res
 
-@app.route("/api/random/score")
-def random_score ():
-    score = request.args.get('score', 100, int)
-    dbName = request.args.get('db', 'images-tags.db', str)
+@app.route("/api/random/3", methods=['POST'])
+def random_3 ():
+    json_text = request.get_data(as_text=True)
+    json_data = json.loads(json_text)
 
-    with getdb(dbName) as conn:
-        c = conn.cursor()
-        c.execute('select id, tags, file_url from posts where score >= ? order by random() limit 1', (score,))
-        row = c.fetchone()
-        if (row is None):
-            abort(404)
-        else:
-            return {
-                'id': row['id'],
-                'file_url': row['file_url']
-            }
-
-
-@app.route("/api/random/2")
-def random_2 ():
-    tags_param = request.args.get('tags', '女孩', str)
-    tags_param_or = request.args.get('tags_or', '', str)
-    tags_param_like = request.args.get('tags_like', '', str)
-    tags_param = tags_param if tags_param else '女孩'
-
-    dbName = request.args.get('db', 'images-tags.db', str)
-
-    with getdb('danbooru-tag-zh.db') as conn_tag_zh:
+    rating = json_data['rating']
+    and_array = json_data['and_array']
+    or_array = json_data['or_array']
+    limit = json_data['limit'] if 'limit' in json_data else 1
     
-        with getdb(dbName) as conn:
-            (tagsFilter, filter_param_list) = get_tags_zh_filter(tags_param, tags_param_or, tags_param_like)
+    with pg_conn.cursor() as c:
+        try:
+            and_tag_list = []
+            or_tag_list = []
+
+            for and_tag in and_array:
+                and_tag_list = and_tag_list + get_tagid_by_zh(and_tag, rating)
+
+            for or_tag in or_array:
+                or_tag_list_item = []
+                for or_tag_item in or_tag:
+                    or_tag_list_item = or_tag_list_item + (get_tagid_by_zh(or_tag_item, rating))
+                or_tag_list.append(or_tag_list_item)
+
+            sqlstr = f'select pt.post_id from post_tag_{rating} pt\n'
+            t_index = 1
+
+            for and_tag_id in and_tag_list:
+                sqlstr += f'inner join post_tag_{rating} pt{t_index} on pt{t_index}.post_id = pt.post_id and pt{t_index}.tag_id = {and_tag_id}\n'
+                t_index += 1
             
-            c = conn.cursor()
-            sqlstr = f'SELECT tags.post_id FROM tags {tagsFilter} GROUP BY tags.post_id ORDER by random() limit ?'
+            for or_tag_ids in or_tag_list:
+                ids_str = ', '.join(map(str, or_tag_ids))
+                sqlstr += f'inner join post_tag_{rating} pt{t_index} on pt{t_index}.post_id = pt.post_id and pt{t_index}.tag_id in ({ids_str})\n'
+                t_index += 1
+
+            sqlstr += 'group by pt.post_id\n'
+            sqlstr += 'order by random()\n'
+            sqlstr += 'limit %s\n'
+
             print(sqlstr)
-            print(filter_param_list)
-            c.execute(sqlstr, tuple(filter_param_list) + (1,))
-            row = c.fetchone()
-
-            if not row:
-                abort(404)
-
-            id = row['post_id']
-
-            c.execute('select id, tags, file_url, score from posts where id = ?', (id, ))
-            row = c.fetchone()
-            c.close()
-            tags = row['tags']
-            file_url = row["file_url"]
-            score = row['score']
+            c.execute(sqlstr, (limit,))
+            rows = c.fetchall()
             
-            tags_list = tags.split(',')
-            tags_list = [s.strip() for s in tags_list]
+            post_id_list = [ row['post_id'] for row in rows ]
+            post_id_list_str = ', '.join(map(str, post_id_list))
 
-            c = conn_tag_zh.cursor()
-            c.execute(f'''select group_concat(tag_zh, ' ') tags_zh, group_concat(tag, ',') tags_en from tags where tag in ({", ".join(["?" for _ in tags_list])})''', tuple(tags_list))
-            row = c.fetchone()
-            tags_zh = row['tags_zh']
-            tags_en = row['tags_en']
-            tags_en_list = tags_en.split(',')
-            tags_not_in_zh = set(tags_list) - set(tags_en_list)
-            row = c.fetchone()
-            c.close()
-
-            return {
-                "id": id,
-                "tags": tags,
-                "tags_zh": (tags_zh + ' ' + ' '.join(tags_not_in_zh)).replace('\\(', '(').replace('\\)', ')'),
-                "file_url": file_url,
-                "score": score
-            }
+            c.execute(f'select id,score,tags,file_url from posts_{rating} where id in ({post_id_list_str})')
+            rows = c.fetchall()
+            
+            result = []
+            for row in rows:
+                result.append({
+                    "id": row['id'],
+                    "tags": row['tags'],
+                    "tags_zh": "",
+                    "file_url": row["file_url"],
+                    "score": row['score']
+                })
+            
+            return result
+        except Exception as err:
+            pg_conn.rollback()
+            raise err
 
 @app.route("/api/random/1")
 def random_1 ():
