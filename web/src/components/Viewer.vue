@@ -17,6 +17,7 @@ interface ITagsCompleteItem {
 }
 
 const tag_input = ref('')
+const cookie_input = ref('')
 const posts = ref([] as IPost[])
 const isLoading = ref(false)
 
@@ -87,6 +88,21 @@ async function search_random () {
   }
 }
 
+async function search_question () {
+  try {
+    isLoading.value = true
+
+    const res = await fetch(`/api/random/q?tags=${tag_input.value}`)
+    posts.value = await res.json()
+    
+    img_src_loaded.value = posts.value
+  } catch (e) {
+    console.error(e)
+  } finally {
+    isLoading.value = false
+  }
+}
+
 async function copy_img_tags (post: IPost) {
   await navigator.clipboard.writeText(post.tags)
 
@@ -120,6 +136,22 @@ function back_top () {
     top: 0,
     behavior: 'smooth'
   })
+
+  search()
+}
+
+function select_all (e: FocusEvent) {
+  const el = e.target as HTMLInputElement
+  el.select()
+}
+
+function setSecureCookie (name: string, value: string, daysToExpire: number) {
+  const expirationDate = new Date();
+  expirationDate.setDate(expirationDate.getDate() + daysToExpire);
+
+  const cookieValue = encodeURIComponent(name) + '=' + encodeURIComponent(value) + '; expires=' + expirationDate.toUTCString() + '; path=/; Secure';
+
+  document.cookie = cookieValue;
 }
 
 </script>
@@ -130,12 +162,16 @@ function back_top () {
     <input ref="el_taginput" type="text" placeholder="tags" v-model="tag_input" style="width: 300px;" @input="trigger_complete">
     <select v-model="databaseName">
       <option value="s">Safe</option>
-      <option value="e">Ex</option>
+      <option value="e">Explicit</option>
     </select>
     column: <input type="number" v-model="img_column" min="0" max="10" />
     width: <input type="number" v-model="img_width" min="0" max="1000" />
     opacity:<input type="number" v-model="img_opacity" min="0" max="10" />
     blur:<input type="number" v-model="img_blur" min="0" max="100" />
+  </div>
+
+  <div>
+    <input type="text" v-model="cookie_input" /><button @click="setSecureCookie('auth', cookie_input, 100)">set cookie</button>
   </div>
 
   <div v-if="tags_complete_items.length > 0" class="tags-complete">
@@ -147,6 +183,7 @@ function back_top () {
   <div style="margin-top: 8px;">
     <button :disabled="isLoading" @click="search()" style="height: 30px;">Search</button>
     <button :disabled="isLoading" @click="search_random()" style="height: 30px;">Random</button>
+    <button :disabled="isLoading" @click="search_question()" style="height: 30px;">Question</button>
   </div>
 
   <div class="img-container">
@@ -159,12 +196,13 @@ function back_top () {
         <a href="javascript:;" @click="copy_img_tags(post)">copy</a>
         <a target="_blank" :href="`https://yande.re/post/show/${post.id}`" >open</a>
         <a target="_blank" :href="post.file_url" rel="noreferrer">raw</a>
+        <input type="text" :value="post.id" @focus="select_all">
       </div>
     </div>
   </div>
 
   <div style="margin-top: 8px;">
-    <button @click="back_top()" style="height: 30px;">Back Top</button>
+    <button @click="back_top()" style="height: 30px;">Back Top Search</button>
   </div>
 </template>
 

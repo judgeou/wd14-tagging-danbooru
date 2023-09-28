@@ -68,7 +68,7 @@ class WaifuDiffusionInterrogator:
 
         providers = rt.get_available_providers()
 
-        self._model = InferenceSession(str(model_path), providers=['CPUExecutionProvider'])
+        self._model = InferenceSession(str(model_path), providers=['CUDAExecutionProvider'])
         self._tags = pd.read_csv(tags_path)
 
         self.__initialized = True
