@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { nextTick, ref } from 'vue'
+import { nextTick, ref, watch, Ref } from 'vue'
 
 interface IPost {
   id: number,
   tags: string,
-  file_url: string
+  file_url: string,
+  tags_yande: string
 }
 
 interface ITagsCompleteItem {
@@ -21,14 +22,28 @@ const cookie_input = ref('')
 const posts = ref([] as IPost[])
 const isLoading = ref(false)
 
-const img_column = ref(3)
-const img_width = ref(250)
-const img_opacity = ref(10)
+const column_gap = ref(load_from_localstorage('column_gap', 256))
+const img_column = ref(load_from_localstorage('img_column', 3))
+const img_opacity = ref(load_from_localstorage('img_opacity', 3))
 const img_blur = ref(0)
 const databaseName = ref('s')
 const tags_complete_items = ref([] as ITagsCompleteItem[])
 const el_taginput = ref<HTMLInputElement>()
 const img_src_loaded = ref([] as IPost[])
+
+watch_save_to_localstorage('column_gap', column_gap)
+watch_save_to_localstorage('img_column', img_column)
+watch_save_to_localstorage('img_opacity', img_opacity)
+
+function load_from_localstorage (name: string, defaultValue: any) {
+  return localStorage.getItem('DAN_VIEWER_' + name) || defaultValue
+}
+
+function watch_save_to_localstorage (name: string, ref_obj: Ref) {
+  watch(ref_obj, newValue => {
+    localStorage.setItem('DAN_VIEWER_' + name, newValue.toString())
+  })
+}
 
 async function post_json (path: string, data: any) {
   const headers = {
@@ -57,30 +72,6 @@ async function search () {
     posts.value = res
     
     img_src_loaded.value = posts.value
-  } catch (e) {
-    console.error(e)
-  } finally {
-    isLoading.value = false
-  }
-}
-
-async function search_random () {
-  try {
-    isLoading.value = true
-    img_src_loaded.value = []
-    posts.value = []
-
-    for (let i = 0; i < 8; i++) {
-      const res = await fetch(`/api/random/1?tags=${tag_input.value}&db=${databaseName.value}`)
-      const [ row ] = await res.json()
-      if (row) {
-        posts.value.push(row)
-        img_src_loaded.value.push(row)
-      } else {
-        break
-      }
-    }
-
   } catch (e) {
     console.error(e)
   } finally {
@@ -165,7 +156,8 @@ function setSecureCookie (name: string, value: string, daysToExpire: number) {
       <option value="e">Explicit</option>
     </select>
     column: <input type="number" v-model="img_column" min="0" max="10" />
-    width: <input type="number" v-model="img_width" min="0" max="1000" />
+    column_gap: <input type="number" v-model="column_gap" min="0" max="1000">
+
     opacity:<input type="number" v-model="img_opacity" min="0" max="10" />
     blur:<input type="number" v-model="img_blur" min="0" max="100" />
   </div>
@@ -182,21 +174,25 @@ function setSecureCookie (name: string, value: string, daysToExpire: number) {
 
   <div style="margin-top: 8px;">
     <button :disabled="isLoading" @click="search()" style="height: 30px;">Search</button>
-    <button :disabled="isLoading" @click="search_random()" style="height: 30px;">Random</button>
     <button :disabled="isLoading" @click="search_question()" style="height: 30px;">Question</button>
   </div>
 
-  <div class="img-container">
-    <div v-for="post in img_src_loaded" :key="post.id" class="img-item" 
-    :style="{ flex: `1 0 calc(100% / ${img_column})`, 'max-width': `calc(100% / ${img_column})` }">
-      <img :src="`/api/image/${post.id}`"
-           :style="{ opacity: img_opacity / 10, filter: `blur(${img_blur}px)`, 'width': `${img_width}px` }">
+  <div class="wf-container" :style="{ 'column-count': img_column, 'column-gap': `${column_gap}px` }">
+    <div v-for="post in img_src_loaded" :key="post.id" class="wf-card" :style="{ 'margin-bottom': `${column_gap}px` }">
+      <img
+      :src="`/api/image/${post.id}`"
+      :style="{ opacity: img_opacity / 10, filter: `blur(${img_blur}px)`}"
+      style="width: 100%;" />
 
       <div class="links">
         <a href="javascript:;" @click="copy_img_tags(post)">copy</a>
         <a target="_blank" :href="`https://yande.re/post/show/${post.id}`" >open</a>
         <a target="_blank" :href="post.file_url" rel="noreferrer">raw</a>
         <input type="text" :value="post.id" @focus="select_all">
+      </div>
+
+      <div>
+        {{ post.tags_yande }}
       </div>
     </div>
   </div>
@@ -207,19 +203,18 @@ function setSecureCookie (name: string, value: string, daysToExpire: number) {
 </template>
 
 <style scoped>
-.img-container .img-item img, .img-container .img-item video {
-  height: auto;
-  display: block;
+.wf-container {
+  list-style: none;
+  padding: 0;
+}
+.wf-card {
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  break-inside: avoid;
+}
+.wf-card img {
   box-shadow: rgba(0, 0, 0, 0.24) 0px 3px 8px;
-}
-.img-container .img-item {
-  margin-bottom: 80px;
-}
-.img-container {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  margin-top: 12px;
 }
 .links a {
   margin-right: 8px;

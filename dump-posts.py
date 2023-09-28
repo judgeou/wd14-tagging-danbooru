@@ -14,7 +14,6 @@ import psycopg2
 from psycopg2.extras import RealDictCursor
 
 headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'}
-pg_conn = psycopg2.connect("dbname=postgres user=dan", cursor_factory=RealDictCursor)
 
 def getdb (dbname = 'images-tags.db'):
     conn = sqlite3.connect(dbname)
@@ -23,13 +22,9 @@ def getdb (dbname = 'images-tags.db'):
 
 lock = threading.Lock()
 
-def get_post (id, rating: str):
-    c = pg_conn.cursor()
-
+def get_post (id, rating: str, c):
     c.execute(f'SELECT * FROM posts_{rating} where id = %s', (id,))
     row = c.fetchone()
-    c.close()
-
     return row
 
 def has_nsfw_tag (tag_arr: list[str]):
@@ -77,7 +72,8 @@ def ensure_image_data (post):
     conn_data.commit()
     return image_data
 
-def add_post (post):
+def add_post (post, pg_conn):
+  try:
     if ('sample_url' not in post):
        return post['id']
   
@@ -110,9 +106,9 @@ def add_post (post):
     elif rating == 'q':
        rating_flag = 'e' if isNSFW else 's'
 
-    post = get_post(id, rating_flag)
-
     c = pg_conn.cursor()
+
+    post = get_post(id, rating_flag, c)
 
     if (post is None):
       c.execute(f'INSERT INTO posts_{rating_flag} (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', 
@@ -124,18 +120,22 @@ def add_post (post):
     c.execute(f'DELETE FROM post_tag_{rating_flag} where post_id = %s', (id,))
 
     for tag in tag_list:
-      t = tag.strip()
-      c.execute(f'SELECT id from tags_{rating_flag} where tag = %s', (t,))
-      row = c.fetchone()
-      
-      if row is None:
-          c.execute(f'INSERT INTO tags_{rating_flag} (tag) values (%s) RETURNING id;', (t,))
-          row = c.fetchone()
-      
-      c.execute(f'INSERT INTO post_tag_{rating_flag} (post_id, tag_id) values (%s, %s)', (id, row['id']))
+      with lock:
+        t = tag.strip()
+        c.execute(f'SELECT id from tags_{rating_flag} where tag = %s', (t,))
+        row = c.fetchone()
+        
+        if row is None:
+            c.execute(f'INSERT INTO tags_{rating_flag} (tag) values (%s) RETURNING id;', (t,))
+            row = c.fetchone()
+        
+        c.execute(f'INSERT INTO post_tag_{rating_flag} (post_id, tag_id) values (%s, %s)', (id, row['id']))
 
     c.close()
     return id
+  except Exception as err:
+    pg_conn.rollback()
+    raise err
 
 def pull_posts (start_id: int, new_old: str) -> list:
   url = 'https://yande.re/post.json'
@@ -150,45 +150,78 @@ def pull_posts (start_id: int, new_old: str) -> list:
        continue
 
   return data
+  
 
-def update_maxminid (max_id: int, min_id: int):
-   with pg_conn.cursor() as c:
-      c.execute('update dump_state set max_id = %s, min_id = %s', (max_id, min_id))
+def update_maxminid (max_id: int, min_id: int, c):
+  c.execute('update dump_state set max_id = %s, min_id = %s', (max_id, min_id))
+
+def add_post_task (t) -> int:
+  (post, pg_conn) = t
+  id = post['id']
+  rating = post['rating']
+  add_post(post, pg_conn)
+  print(f'{id}_{rating} done')
+  return id
+
+def find_max_iter (iterator) -> int:
+    max_value = 0
+    
+    for number in iterator:
+        if number > max_value:
+            max_value = number
+    
+    return max_value
+
+def find_min_iter (iterator) -> int:
+    min_value = 2000000000
+    
+    for number in iterator:
+        if number < min_value:
+            min_value = number
+    
+    return min_value
 
 def begin_dump_all ():
-   with pg_conn.cursor() as c:
-      c.execute('SELECT * from dump_state')
-      dump_state = c.fetchone()
-      max_id = dump_state['max_id']
-      min_id = dump_state['min_id']
+  pg_conn = psycopg2.connect("dbname=postgres user=dan", cursor_factory=RealDictCursor)
+  
+  with pg_conn.cursor() as c:
+    c.execute('SELECT * from dump_state')
+    dump_state = c.fetchone()
+    max_id = dump_state['max_id']
+    min_id = dump_state['min_id']
+    workers_num = 4
 
-      while True:
-        posts = pull_posts(max_id, 'new')
+  while True:
+    posts = pull_posts(max_id, 'new')
 
-        if len(posts) > 0:
-          for post in posts:
-            id = post['id']
-            rating = post['rating']
-            max_id = id
-            add_post(post)
-            update_maxminid(max_id, min_id)
-            pg_conn.commit()
-            print(f'{id}_{rating} done')
-        else:
-           break
-        
-      while True:
-         posts = pull_posts(min_id, 'old')
+    if len(posts) > 0:
+      with ThreadPoolExecutor(max_workers=workers_num) as tpe:
+        c = pg_conn.cursor()
+        c.execute('BEGIN')
+        posts_params = [(post, pg_conn) for post in posts]
+        results = tpe.map(add_post_task, posts_params)
+        max_id = find_max_iter(results)
+        update_maxminid(max_id, min_id, c)
+        c.close()
+        pg_conn.commit()
+        print(f'commit {max_id} done')
+    else:
+        break
+    
+  while True:
+    posts = pull_posts(min_id, 'old')
 
-         if len(posts) > 0:
-            for post in posts:
-              id = post['id']
-              rating = post['rating']
-              min_id = id
-              add_post(post)
-              update_maxminid(max_id, min_id)
-              pg_conn.commit()
-              print(f'{id}_{rating} done')
+    if len(posts) > 0:
+      with ThreadPoolExecutor(max_workers=workers_num) as tpe:
+        c = pg_conn.cursor()
+        c.execute('BEGIN')
+        posts_params = [(post, pg_conn) for post in posts]
+        results = tpe.map(add_post_task, posts_params)
+        min_id = find_min_iter(results)
+        update_maxminid(max_id, min_id, c)
+        c.close()
+        pg_conn.commit()
+        print(f'commit {min_id} done')
 
 # begin_dump('rating:s')
 # begin_dump_old('q')

@@ -125,6 +125,9 @@ def get_tagid_by_zh (tag_zh: str, rating: str):
         result = []
         tag_zh = tag_zh.replace('\\', '\\\\')
 
+        if tag_zh == '':
+            return []
+
         if (tag_zh.isascii()):
             c.execute(f'select id from tags_{rating} where tag like %s', (tag_zh,))
             rows = c.fetchall()
@@ -205,32 +208,14 @@ def send_report(path):
 def search_tag ():
     tag = request.args.get('tag', '', str)
     tag_p = f'%{tag}%'
-    with getdb('images-tags.db') as conn:
-        c = conn.cursor()
-        
-        if tag.isascii():
-            c.execute(f'''
-SELECT tag from tags
-where tag like ?
-GROUP by tag
-limit 20
-''', (tag_p, ))
-        else:
-            c.execute(f'''
-SELECT dan_zh.tag_zh tag from dan_zh
-INNER join tags ttt on ttt.tag = dan_zh.tag
-where dan_zh.tag_zh like ?
-GROUP by dan_zh.tag_zh
-limit 20
-''', (tag_p,))
-            
+    with getdb_pg().cursor() as c:
+        c.execute(f'SELECT * FROM tags_s where tag like %s or tag_zh like %s limit 10', (tag_p, tag_p))
         rows = c.fetchall()
-        c.close()
-
         result = []
         for row in rows:
             result.append({
-                'tag': row['tag'].replace('\\(', '(').replace('\\)', ')')
+                'tag': row['tag'].replace('\\(', '(').replace('\\)', ')'),
+                'tag_zh': row['tag_zh']
             })
         return result
 
@@ -277,7 +262,7 @@ def image(id: int):
             res.headers['Content-Type'] = 'image/jpeg'
     
 
-
+    res.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
     return res
 
 @app.route("/api/random/3", methods=['POST'])
@@ -306,7 +291,7 @@ def random_3 ():
                     or_tag_list_item = or_tag_list_item + (get_tagid_by_zh(or_tag_item, rating))
                 or_tag_list.append(or_tag_list_item)
 
-            sqlstr = f'select p.id,p.score,p.tags,p.file_url from posts_{rating} p\n'
+            sqlstr = f'select p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande from posts_{rating} p\n'
             t_index = 1
 
             for and_tag_id in and_tag_list:
@@ -318,7 +303,7 @@ def random_3 ():
                 sqlstr += f'inner join post_tag_{rating} pt{t_index} on pt{t_index}.post_id = p.id and pt{t_index}.tag_id in ({ids_str})\n'
                 t_index += 1
 
-            sqlstr += 'group by p.id,p.score,p.tags,p.file_url\n'
+            sqlstr += 'group by p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande\n'
             sqlstr += 'order by random()\n'
             sqlstr += 'limit %s\n'
 
@@ -333,7 +318,9 @@ def random_3 ():
                     "tags": row['tags'],
                     "tags_zh": "",
                     "file_url": row["file_url"],
-                    "score": row['score']
+                    "score": row['score'],
+                    "source": row['source'],
+                    "tags_yande": row['tags_yande']
                 })
             
             return result
