@@ -12,6 +12,7 @@ from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
 import urllib.request
 from io import BytesIO
+import random
 
 app = Flask(__name__)
 
@@ -303,8 +304,9 @@ def random_3 ():
                 sqlstr += f'inner join post_tag_{rating} pt{t_index} on pt{t_index}.post_id = p.id and pt{t_index}.tag_id in ({ids_str})\n'
                 t_index += 1
 
-            sqlstr += 'group by p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande\n'
-            sqlstr += 'order by random()\n'
+            # sqlstr += 'group by p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande\n'
+
+            sqlstr += f'order by ro desc\n'
             sqlstr += 'limit %s\n'
 
             print(sqlstr)
@@ -312,7 +314,9 @@ def random_3 ():
             rows = c.fetchall()
             
             result = []
+            post_id_list = []
             for row in rows:
+                post_id_list.append(str(row['id']))
                 result.append({
                     "id": row['id'],
                     "tags": row['tags'],
@@ -322,92 +326,25 @@ def random_3 ():
                     "source": row['source'],
                     "tags_yande": row['tags_yande']
                 })
+
+            post_id_list_join = ', '.join(post_id_list)
+            c.execute(f'UPDATE posts_{rating} set ro = random() * 2147483647 where id in ({post_id_list_join})')
+            c.execute(f'select sum(ro) / count(ro) as ro_avg from posts_{rating}')
+            ro_avg = c.fetchone()['ro_avg']
+            c.execute(f'''
+update posts_s set ro = ({ro_avg}) - (random() * {limit}) 
+where id in (
+select id from posts_s 
+order by ro asc
+limit {limit}
+)
+''')
+            pg_conn.commit()
             
             return result
         except Exception as err:
             getdb_pg().rollback()
             raise err
         
-@app.route('/api/random/q')
-def random_q ():
-    with getdb_pg().cursor() as c:
-        c.execute('select * from posts_s where rating = %s order by random() limit 20', ('q',))
-        rows = c.fetchall()
-        result = []
-        for row in rows:
-            result.append({
-                "id": row['id'],
-                "tags": row['tags'],
-                "tags_zh": "",
-                "file_url": row["file_url"],
-                "score": row['score']
-            })
-        return result
-
-@app.route("/api/random/1")
-def random_1 ():
-    limit = request.args.get('limit', 20, int)
-    tags = request.args.get('tags', '', str)
-    dbName = request.args.get('db', 'images-tags.db', str)
-    with getdb(dbName) as conn:
-        (tagsFilter, paramValue) = get_tags_filterCount(tags)
-        c = conn.cursor()
-
-        post_id_list = []
-
-        executeParams = paramValue + (limit, )
-        havingCondition = f'HAVING count(1) = {len(paramValue)}' if len(paramValue) > 0 else ''
-        c.execute(f'select post_id from tags {tagsFilter} GROUP BY post_id {havingCondition} order by random() limit ? ', executeParams)
-        rows = c.fetchall()
-
-        for row in rows:
-            post_id_list.append(row['post_id'])
-
-        sqlstr = f'select id, tags, file_url from posts where id in ({", ".join(map(str, post_id_list))})'
-        c.execute(sqlstr)
-        rows = c.fetchall()
-
-        results = []
-        for row in rows:
-            tags = replaceTags(excludeTags(row['tags']))
-            results.append({
-                "id": row['id'],
-                "tags": tags,
-                "file_url": row["file_url"]
-            })
-        
-        c.close()
-
-        return results
-
-@app.route("/api/random")
-def random ():
-    limit = request.args.get('limit', 20, int)
-    tags = request.args.get('tags', '', str)
-    dbName = request.args.get('db', 'images-tags.db', str)
-    with getdb(dbName) as conn:
-        (tagsFilter, tagCount) = get_tags_filterCount(tags)
-
-        sqlstr = f'''select post_id id, tags from tags
-inner join posts on posts.id = post_id
-{tagsFilter}
-GROUP by post_id
-having count(tags.tag) >= {tagCount}
-order by random()
-limit ?'''
-        c = conn.cursor()
-        c.execute(sqlstr, (limit, ))
-        rows = c.fetchall()
-        c.close()
-
-        results = []
-        for row in rows:
-            tags = replaceTags(excludeTags(row['tags']))
-            results.append({
-                "id": row['id'],
-                "tags": tags
-            })
-
-        return results
 
 app.run()

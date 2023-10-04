@@ -96,6 +96,7 @@ def add_post (post, pg_conn):
     tags = app.image_to_wd14_tags(image, 'wd14-convnext', 0.35, False, True, False, True)
     tag_list = tags.split(',')
     tag_list += tags_yande.split(' ')
+    tag_list = list(set(tag_list))
     isNSFW = has_nsfw_tag(tag_list)
     
     rating_flag = ''
@@ -105,22 +106,22 @@ def add_post (post, pg_conn):
        rating_flag = 'e'
     elif rating == 'q':
        rating_flag = 'e' if isNSFW else 's'
+    
+    with lock:
+      c = pg_conn.cursor()
 
-    c = pg_conn.cursor()
+      post = get_post(id, rating_flag, c)
 
-    post = get_post(id, rating_flag, c)
+      if (post is None):
+        c.execute(f'INSERT INTO posts_{rating_flag} (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, ro) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, random())', 
+          (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source))
+      else:
+        c.execute(f'UPDATE posts_{rating_flag} set file_ext = %s, sample_url = %s, file_url = %s, sample_width = %s, sample_height = %s, score = %s, updated_at = %s, tags = %s, rating = %s, tags_yande = %s, source = %s WHERE id = %s', 
+          (file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, id))
 
-    if (post is None):
-      c.execute(f'INSERT INTO posts_{rating_flag} (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)', 
-        (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source))
-    else:
-      c.execute(f'UPDATE posts_{rating_flag} set file_ext = %s, sample_url = %s, file_url = %s, sample_width = %s, sample_height = %s, score = %s, updated_at = %s, tags = %s, rating = %s, tags_yande = %s, source = %s WHERE id = %s', 
-        (file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, id))
+      c.execute(f'DELETE FROM post_tag_{rating_flag} where post_id = %s', (id,))
 
-    c.execute(f'DELETE FROM post_tag_{rating_flag} where post_id = %s', (id,))
-
-    for tag in tag_list:
-      with lock:
+      for tag in tag_list:
         t = tag.strip()
         c.execute(f'SELECT id from tags_{rating_flag} where tag = %s', (t,))
         row = c.fetchone()
@@ -129,10 +130,10 @@ def add_post (post, pg_conn):
             c.execute(f'INSERT INTO tags_{rating_flag} (tag) values (%s) RETURNING id;', (t,))
             row = c.fetchone()
         
-        c.execute(f'INSERT INTO post_tag_{rating_flag} (post_id, tag_id) values (%s, %s)', (id, row['id']))
+        c.execute(f'INSERT INTO post_tag_{rating_flag} (post_id, tag_id) values (%s, %s) ON CONFLICT (post_id, tag_id) DO NOTHING', (id, row['id']))
 
-    c.close()
-    return id
+      c.close()
+      return id
   except Exception as err:
     pg_conn.rollback()
     raise err

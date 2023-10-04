@@ -9,12 +9,8 @@ interface IPost {
 }
 
 interface ITagsCompleteItem {
-  antecedent?: string,
-  category: string,
-  label: string,
-  post_count: number,
-  type: string,
-  value: string
+  tag: string,
+  tag_zh: string
 }
 
 const tag_input = ref('')
@@ -103,7 +99,7 @@ async function copy_img_tags (post: IPost) {
 async function trigger_complete () {
   if (tag_input.value.length >= 2) {
     const input = tag_input.value.split(' ').pop() || ''
-    const res = await fetch(`https://danbooru.donmai.us/autocomplete.json?search%5Bquery%5D=${encodeURIComponent(input)}&search%5Btype%5D=tag_query&version=1&limit=20`)
+    const res = await fetch(`/api/search/tag?tag=${input}`)
     const items = await res.json() as ITagsCompleteItem[]
 
     tags_complete_items.value = items
@@ -114,7 +110,7 @@ async function trigger_complete () {
 
 async function input_complete (item: ITagsCompleteItem) {
   const tag_input_list = tag_input.value.split(' ')
-  tag_input_list[tag_input_list.length - 1] = item.value
+  tag_input_list[tag_input_list.length - 1] = item.tag
   tag_input.value = tag_input_list.join(' ') + ' '
   tags_complete_items.value = []
 
@@ -125,7 +121,7 @@ async function input_complete (item: ITagsCompleteItem) {
 function back_top () {
   window.scrollTo({
     top: 0,
-    behavior: 'smooth'
+    behavior: 'instant'
   })
 
   search()
@@ -168,7 +164,7 @@ function setSecureCookie (name: string, value: string, daysToExpire: number) {
 
   <div v-if="tags_complete_items.length > 0" class="tags-complete">
     <div v-for="item in tags_complete_items" class="tags-complete-item" @click="input_complete(item)">
-      <span v-if="item.antecedent">{{ item.antecedent }} -> </span>{{ item.label }}
+      {{ item.tag }} <span v-if="item.tag_zh">{{ item.tag_zh }}</span>
     </div>
   </div>
 
