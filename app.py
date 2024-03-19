@@ -7,13 +7,15 @@ import gradio as gr
 import numpy as np
 import pandas as pd
 import requests
-from PIL import Image
+from PIL import Image, ImageFile
 from huggingface_hub import hf_hub_download
 from onnxruntime import InferenceSession
 import onnxruntime as rt
 from urllib.request import urlopen
 from io import BytesIO
 from concurrent.futures import ThreadPoolExecutor
+
+ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 # noinspection PyUnresolvedReferences
 def make_square(img, target_size):

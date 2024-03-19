@@ -1,6 +1,6 @@
 from PIL import Image, ImageGrab
 import clipboard
-import app
+import app_cpu
 
 # 排除不需要的tag，从 exclude.txt 读取需要排除的tag
 def excludeTags (str):
@@ -23,7 +23,7 @@ while True:
     if clipboard_image is None:
         print("Not Image")
     else:
-        result = app.image_to_wd14_tags(clipboard_image, 'wd14-convnext', 0.35, False, True, False, True)
+        result = app_cpu.image_to_wd14_tags(clipboard_image, 'wd14-convnext', 0.35, False, True, False, True)
         result = excludeTags(result)
         result = replaceTags(result)
         print(result)
