@@ -23,7 +23,7 @@ while True:
     if clipboard_image is None:
         print("Not Image")
     else:
-        result = app_cpu.image_to_wd14_tags(clipboard_image, 'wd14-convnext', 0.35, False, True, False, True)
+        result = app_cpu.image_to_wd14_tags(clipboard_image, 'wd14-convnext-v3', 0.40, False, True, False, True)
         result = excludeTags(result)
         result = replaceTags(result)
         print(result)

@@ -70,7 +70,7 @@ class WaifuDiffusionInterrogator:
 
         providers = rt.get_available_providers()
 
-        self._model = InferenceSession(str(model_path), providers=['CUDAExecutionProvider'])
+        self._model = InferenceSession(str(model_path), providers=['CPUExecutionProvider'])
         self._tags = pd.read_csv(tags_path)
 
         self.__initialized = True
@@ -127,6 +127,9 @@ WAIFU_MODELS: Mapping[str, WaifuDiffusionInterrogator] = {
     'wd14-convnext': WaifuDiffusionInterrogator(
         repo='SmilingWolf/wd-v1-4-convnextv2-tagger-v2',
     ),
+    'wd14-convnext-v3': WaifuDiffusionInterrogator(
+        repo="SmilingWolf/wd-swinv2-tagger-v3"
+    )
 }
 RE_SPECIAL = re.compile(r'([\\()])')
 
