@@ -1,4 +1,5 @@
-from flask import Flask, make_response, request, url_for, send_from_directory, abort
+from flask import Flask, make_response, request, url_for, send_from_directory, abort, jsonify
+from flask_cors import CORS, cross_origin
 import sqlite3
 import gradio as gr
 import random as rrr
@@ -15,6 +16,7 @@ from io import BytesIO
 import random
 
 app = Flask(__name__)
+CORS(app)
 
 pg_conn = psycopg2.connect("dbname=postgres user=dan", cursor_factory=RealDictCursor)
 
@@ -123,6 +125,25 @@ def get_tag_by_zh (tag_zh = ''):
 
 def get_tagid_by_zh (tag_zh: str, rating: str):
     with getdb_pg().cursor() as c:
+        result = []
+        tag_zh = tag_zh.replace('\\', '\\\\')
+
+        if tag_zh == '':
+            return []
+
+        if (tag_zh.isascii()):
+            c.execute(f'select id from tags_{rating} where tag like %s', (tag_zh,))
+            rows = c.fetchall()
+            result = [ item['id'] for item in rows ]
+        else:
+            c.execute(f'select id from tags_{rating} where tag_zh like %s', (tag_zh,))
+            rows = c.fetchall()
+            result = [ item['id'] for item in rows ]
+
+        return result
+    
+def get_tagid_by_zh2 (tag_zh: str, rating: str, pg_conn):
+    with pg_conn.cursor() as c:
         result = []
         tag_zh = tag_zh.replace('\\', '\\\\')
 
@@ -266,7 +287,60 @@ def image(id: int):
     res.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
     return res
 
+@app.route("/api/image2/<int:id>")
+def image2(id: int):
+    with psycopg2.connect("dbname=postgres user=real", cursor_factory=RealDictCursor) as pg_conn, pg_conn.cursor() as c:
+        c.execute('SELECT id, data FROM image_data where id = %s', (id,))
+        data = c.fetchone()['data']
+        data = data.tobytes()
+
+    blur_value = request.args.get('blur', None, str)
+    reverse_value = request.args.get('reverse', None, str)
+
+    if (not blur_value) and (not reverse_value):
+        res = make_response(data)
+        res.headers['Content-Type'] = 'image/webp'
+    else:
+        if blur_value:
+            image = Image.open(io.BytesIO(data))
+            blur = ImageFilter.GaussianBlur(radius=int(blur_value))
+            image = image.filter(blur)
+            image_io = io.BytesIO()
+            image.save(image_io, 'WEBP')  # You can choose the format you want (PNG, JPEG, etc.)
+            image_io.seek(0)
+            res = make_response(image_io)
+            res.headers['Content-Type'] = 'image/webp'
+        if reverse_value:
+            image = Image.open(io.BytesIO(data))
+            image = reverse_phase(image)
+            image_io = io.BytesIO()
+            image.save(image_io, 'WEBP')
+            image_io.seek(0)
+            res = make_response(image_io)
+            res.headers['Content-Type'] = 'image/webp'
+    
+
+    res.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
+    return res
+
+@app.route("/api/random/tags")
+def random_tags ():
+    limit = request.args.get('limit', 20)
+    factor = request.args.get('factor', 1)
+
+    with getdb_pg().cursor() as c:
+        c.execute(f'select tag from tags_s order by probability + (random() * %s) desc limit %s', (factor, limit))
+        rows = c.fetchall()
+        result = []
+
+        for row in rows:
+            result.append(row['tag'])
+        
+        return ', '.join(result)
+
+
 @app.route("/api/random/3", methods=['POST'])
+@cross_origin()
 def random_3 ():
     json_text = request.get_data(as_text=True)
     json_data = json.loads(json_text)
@@ -274,6 +348,9 @@ def random_3 ():
     rating = json_data['rating']
     and_array = json_data['and_array']
     or_array = json_data['or_array']
+    not_array = []
+    if 'not_array' in json_data:
+        not_array = json_data['not_array']
     limit = json_data['limit'] if 'limit' in json_data else 1
 
     and_array = remvoe_duplicate(and_array)
@@ -282,6 +359,7 @@ def random_3 ():
         try:
             and_tag_list = []
             or_tag_list = []
+            not_tag_list = []
 
             for and_tag in and_array:
                 and_tag_list = and_tag_list + get_tagid_by_zh(and_tag, rating)
@@ -292,7 +370,13 @@ def random_3 ():
                     or_tag_list_item = or_tag_list_item + (get_tagid_by_zh(or_tag_item, rating))
                 or_tag_list.append(or_tag_list_item)
 
-            sqlstr = f'select p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande from posts_{rating} p\n'
+            for not_tag in not_array:
+                not_tag_list_item = []
+                for not_tag_item in not_tag:
+                    not_tag_list_item = not_tag_list_item + (get_tagid_by_zh(not_tag_item, rating))
+                not_tag_list.append(not_tag_list_item)
+
+            sqlstr = f'select p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande,p.sample_width, p.sample_height from posts_{rating} p\n'
             t_index = 1
 
             for and_tag_id in and_tag_list:
@@ -303,10 +387,20 @@ def random_3 ():
                 ids_str = ', '.join(map(str, or_tag_ids))
                 sqlstr += f'inner join post_tag_{rating} pt{t_index} on pt{t_index}.post_id = p.id and pt{t_index}.tag_id in ({ids_str})\n'
                 t_index += 1
+            
+            for not_tag_ids in not_tag_list:
+                ids_str = ', '.join(map(str, not_tag_ids))
+                # sqlstr += f'inner join post_tag_{rating} pt{t_index} on pt{t_index}.post_id = p.id and pt{t_index}.tag_id not in ({ids_str})\n'
+                
+                t_index += 1
 
             # sqlstr += 'group by p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande\n'
 
-            sqlstr += f'order by ro desc\n'
+            if 'score' in json_data:
+                score = json_data['score']
+                sqlstr += f'where score >= {score}\n'
+
+            sqlstr += f'order by random()\n'
             sqlstr += 'limit %s\n'
 
             print(sqlstr)
@@ -324,27 +418,91 @@ def random_3 ():
                     "file_url": row["file_url"],
                     "score": row['score'],
                     "source": row['source'],
-                    "tags_yande": row['tags_yande']
+                    "tags_yande": row['tags_yande'],
+                    "width": row['sample_width'],
+                    "height": row['sample_height']
                 })
 
-            post_id_list_join = ', '.join(post_id_list)
-            c.execute(f'UPDATE posts_{rating} set ro = random() * 2147483647 where id in ({post_id_list_join})')
-            c.execute(f'select sum(ro) / count(ro) as ro_avg from posts_{rating}')
-            ro_avg = c.fetchone()['ro_avg']
-            c.execute(f'''
-update posts_s set ro = ({ro_avg}) - (random() * {limit}) 
-where id in (
-select id from posts_s 
-order by ro asc
-limit {limit}
-)
-''')
+            # post_id_list_join = ', '.join(post_id_list)
+            # c.execute(f'UPDATE posts_{rating} set ro = random() * 2147483647 where id in ({post_id_list_join})')
+            # c.execute(f'select sum(ro) / count(ro) as ro_avg from posts_{rating}')
+            # ro_avg = c.fetchone()['ro_avg']
+#             c.execute(f'''
+# update posts_s set ro = ({ro_avg}) - (random() * {limit}) 
+# where id in (
+# select id from posts_s 
+# order by ro asc
+# limit {limit}
+# )
+# ''')
             pg_conn.commit()
-            
+
             return result
         except Exception as err:
             getdb_pg().rollback()
             raise err
         
+@app.route("/api/random/4", methods=['POST'])
+def random_4 ():
+    json_text = request.get_data(as_text=True)
+    json_data = json.loads(json_text)
+
+    rating = json_data['rating']
+    and_array = json_data['and_array']
+    or_array = json_data['or_array']
+    limit = json_data['limit'] if 'limit' in json_data else 1
+
+    and_array = remvoe_duplicate(and_array)
+    
+    with psycopg2.connect("dbname=postgres user=real", cursor_factory=RealDictCursor) as pg_conn, pg_conn.cursor() as c:
+        try:
+            and_tag_list = []
+            or_tag_list = []
+
+            for and_tag in and_array:
+                and_tag_list = and_tag_list + get_tagid_by_zh2(and_tag, 'real', pg_conn)
+
+            for or_tag in or_array:
+                or_tag_list_item = []
+                for or_tag_item in or_tag:
+                    or_tag_list_item = or_tag_list_item + (get_tagid_by_zh2(or_tag_item, 'real', pg_conn))
+                or_tag_list.append(or_tag_list_item)
+
+            sqlstr = f'select p.id,p.tags from posts_real p\n'
+            t_index = 1
+
+            for and_tag_id in and_tag_list:
+                sqlstr += f'inner join post_tag_real pt{t_index} on pt{t_index}.post_id = p.id and pt{t_index}.tag_id = {and_tag_id}\n'
+                t_index += 1
+            
+            for or_tag_ids in or_tag_list:
+                ids_str = ', '.join(map(str, or_tag_ids))
+                sqlstr += f'inner join post_tag_real pt{t_index} on pt{t_index}.post_id = p.id and pt{t_index}.tag_id in ({ids_str})\n'
+                t_index += 1
+
+            # sqlstr += 'group by p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande\n'
+            sqlstr += f'where rating = %s\n'
+            sqlstr += f'order by random()\n'
+            sqlstr += 'limit %s\n'
+
+            print(sqlstr)
+            c.execute(sqlstr, (rating, limit))
+            rows = c.fetchall()
+            
+            result = []
+            post_id_list = []
+            for row in rows:
+                post_id_list.append(str(row['id']))
+                result.append({
+                    "id": row['id'],
+                    "tags": row['tags'],
+                    "tags_zh": "",
+                    "link": "/api/image2/" + str(row['id'])
+                })
+
+            return result
+        except Exception as err:
+            getdb_pg().rollback()
+            raise err
 
 app.run()

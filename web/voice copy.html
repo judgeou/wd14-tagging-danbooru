@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+<body>
+  <div>
+    <textarea id="text" cols="100" rows="10"></textarea>
+  </div>
+  <div>
+    <button id="play_btn" >play</button>
+    <input type="number" id="noise" value="0.5" />
+    <input type="number" id="length" value="1.0">
+  </div>
+  <div>
+    <audio id="audio_el" controls></audio>
+  </div>
+
+  <script>
+    document.querySelector('#play_btn').addEventListener('click', () => {
+      const t = document.querySelector('#text').value
+      const noise = document.querySelector('#noise').value || 0.5
+      const length = document.querySelector('#length').value || 1.0
+      const asrc = `https://1.oza-oza.top:8443/api/to_voice?text=${encodeURIComponent(t)}&format=opus&noise_scale=${noise}&length=${length}`
+      const audio_el = document.querySelector('#audio_el')
+      audio_el.src = asrc
+      audio_el.play()
+
+    })
+    // fetch('https://1.oza-oza.top:8443/api/to_voice?text=%E4%BD%A0%E5%A5%BD%E5%95%8A&format=opus')
+  </script>
+</body>
+</html>

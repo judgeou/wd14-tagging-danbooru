@@ -1,10 +1,8 @@
 import sqlite3
-import json
 from urllib.request import urlopen
 from urllib.error import URLError, HTTPError
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
-import time
 import threading
 from io import BytesIO
 from PIL import Image
@@ -93,7 +91,8 @@ def add_post (post, pg_conn):
     image_stream = BytesIO(image_data)
     image = Image.open(image_stream)
 
-    tags = app.image_to_wd14_tags(image, 'wd14-convnext', 0.35, False, True, False, True)
+    with lock:
+      tags = app.image_to_wd14_tags(image, 'wd14-convnext-v3', 0.35, False, True, False, True)
     tag_list = tags.split(',')
     tag_list += tags_yande.split(' ')
     tag_list = list(set(tag_list))
@@ -209,7 +208,7 @@ def begin_dump_all ():
     else:
         break
     
-  while True:
+  while False:
     posts = pull_posts(min_id, 'old')
 
     if len(posts) > 0:
