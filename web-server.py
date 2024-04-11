@@ -14,6 +14,7 @@ from urllib.error import URLError, HTTPError
 import urllib.request
 from io import BytesIO
 import random
+import app_cpu
 
 app = Flask(__name__)
 CORS(app)
@@ -286,6 +287,19 @@ def image(id: int):
 
     res.headers['Cache-Control'] = 'public, max-age=31536000, immutable'
     return res
+
+@app.route("/api/image/<int:id>/wd14")
+def image_wd14 (id: int):
+    with getdb('images-data.db') as conn:
+        c = conn.cursor()
+        c.execute('SELECT id, data FROM images where id = ?', (id,))
+        data = c.fetchone()['data']
+        c.close()
+    
+    image = Image.open(io.BytesIO(data))
+    tags = app_cpu.image_to_wd14_tags(image, 'wd14-convnext-v3', 0.35, True, True, False, True)
+
+    return tags
 
 @app.route("/api/image2/<int:id>")
 def image2(id: int):

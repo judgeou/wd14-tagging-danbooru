@@ -125,6 +125,16 @@ async function copy_img_tags (post: IPost, is_space_split = false, $event: Mouse
   alertCopy.value = false
 }
 
+async function copy_img_tags_wd14 (post: IPost) {
+  alertCopy.value = true
+  const res = await fetch(`/api/image/${post.id}/wd14`)
+  const tags = await res.text()
+
+  await navigator.clipboard.writeText(tags)
+  console.log(tags)
+  alertCopy.value = false
+}
+
 async function trigger_complete () {
   if (tag_input.value.length >= 2) {
     const input = tag_input.value.split(' ').pop() || ''
@@ -228,8 +238,8 @@ function shuffleArray<T> (array_: T[]) {
 
       <div class="links">
         <a href="javascript:;" @click="copy_img_tags(post, false, $event)">copy1</a>
-        <a href="javascript:;" @click="copy_img_tags(post, true, $event)">copy2</a>
         <a href="javascript:;" @click="copy_img_tags(post, false, $event, true)">copy3</a>
+        <a href="javascript:;" @click="copy_img_tags_wd14(post)">wd14</a>
         <a target="_blank" :href="`https://yande.re/post/show/${post.id}`" >open</a>
         <a target="_blank" :href="post.file_url" rel="noreferrer">raw</a>
         <input type="text" :value="`hqyt ${post.id}`" @focus="select_all">
