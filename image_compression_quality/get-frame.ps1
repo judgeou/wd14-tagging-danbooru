@@ -1,0 +1,1 @@
+ffmpeg -i input.mp4 -vf "select=eq(n\,99)" -vframes 1 output.png

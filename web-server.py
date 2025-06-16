@@ -15,8 +15,39 @@ import urllib.request
 from io import BytesIO
 import random
 import app_cpu
+import requests
+import logging
+import time
+from logging.handlers import RotatingFileHandler
+
+# 配置日志记录器
+handler = RotatingFileHandler('access.log', maxBytes=10000000, backupCount=5)
+handler.setFormatter(logging.Formatter(
+    '%(asctime)s %(levelname)s: %(message)s'
+))
+handler.setLevel(logging.INFO)
 
 app = Flask(__name__)
+app.logger.addHandler(handler)
+app.logger.setLevel(logging.INFO)
+
+# 添加请求日志记录中间件
+@app.before_request
+def log_request_info():
+    # 只记录 POST 请求
+    if request.method == 'POST':
+        # 获取请求体内容
+        body = request.get_data(as_text=True)
+        # 记录请求信息和请求体
+        app.logger.info('Request: %s %s %s\nBody: %s', request.method, request.url, request.remote_addr, body)
+
+@app.after_request
+def log_response_info(response):
+    # 只记录 POST 请求
+    if request.method == 'POST':
+        app.logger.info('Response: %s %s %s %s', request.method, request.url, response.status_code, response.content_length)
+    return response
+
 CORS(app)
 
 pg_conn = psycopg2.connect("dbname=postgres user=dan", cursor_factory=RealDictCursor)
@@ -244,6 +275,7 @@ def search_tag ():
 
 
 @app.route("/api/image/<int:id>")
+@app.route("/api/image/<int:id>.jpg")
 def image(id: int):
     isOriginal = request.args.get('o', None, str)
     with getdb('images-data.db') as conn:
@@ -297,7 +329,7 @@ def image_wd14 (id: int):
         c.close()
     
     image = Image.open(io.BytesIO(data))
-    tags = app_cpu.image_to_wd14_tags(image, 'wd14-convnext-v3', 0.35, True, True, False, True)
+    tags = app_cpu.image_to_wd14_tags(image, 'wd-eva02-large-tagger-v3', 0.35, True, True, False, True)
 
     return tags
 
@@ -365,6 +397,8 @@ def random_3 ():
     not_array = []
     if 'not_array' in json_data:
         not_array = json_data['not_array']
+
+    until_id = json_data['until_id'] if 'until_id' in json_data else None
     limit = json_data['limit'] if 'limit' in json_data else 1
 
     and_array = remvoe_duplicate(and_array)
@@ -390,7 +424,12 @@ def random_3 ():
                     not_tag_list_item = not_tag_list_item + (get_tagid_by_zh(not_tag_item, rating))
                 not_tag_list.append(not_tag_list_item)
 
-            sqlstr = f'select p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande,p.sample_width, p.sample_height from posts_{rating} p\n'
+            sqlstr = f'select p.id from posts_{rating} p\n'
+            
+            if 'tablesample' in json_data and json_data['action'] == 'search':
+                tablesample = json_data['tablesample']
+                # sqlstr += f'TABLESAMPLE BERNOULLI ({tablesample})\n'
+
             t_index = 1
 
             for and_tag_id in and_tag_list:
@@ -409,16 +448,50 @@ def random_3 ():
                 t_index += 1
 
             # sqlstr += 'group by p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande\n'
+            
+            # c.execute(f'select max(id) max_id, min(id) min_id from posts_{rating}')
+            # rows = c.fetchall()
+            # max_id = rows[0]['max_id']
+            # min_id = rows[0]['min_id']
+            # target_id = random.randint(min_id, max_id)
+            # sqlstr += f'where p.id > {target_id} '
 
+            sqlstr += f'where 1=1\n'
+            
             if 'score' in json_data:
                 score = json_data['score']
-                sqlstr += f'where score >= {score}\n'
+                sqlstr += f' and score >= {score}\n'
 
-            sqlstr += f'order by random()\n'
-            sqlstr += 'limit %s\n'
+            if until_id and until_id > 0:
+                sqlstr += f' and p.id < {until_id}\n'
 
-            print(sqlstr)
-            c.execute(sqlstr, (limit,))
+            if 'action' in json_data:
+                action = json_data['action']
+                page_begin_id = json_data['page_begin_id']
+                page_end_id = json_data['page_end_id']
+
+                if action == 'newest':
+                    sqlstr += f'order by id desc\n'
+                elif action == 'oldest':
+                    sqlstr += f'order by id asc\n'
+                elif action == 'next':
+                    sqlstr += f'and id > {page_end_id}\n'
+                    sqlstr += f'order by id asc\n'
+                elif action == 'prev':
+                    sqlstr += f'and id < {page_begin_id}\n'
+                    sqlstr += f'order by id desc\n'
+                elif action == 'search':
+                    sqlstr += f'order by id desc\n'
+            else:
+                sqlstr += f'order by random() asc\n'
+
+            sqlstr += f'limit {limit}\n'
+
+            sqlstr_select = (f'select distinct p.id,p.score,p.tags,p.file_url,p.source,p.tags_yande,p.sample_width, p.sample_height from posts_{rating} p\n'
+            + f'where exists (select 1 from ({sqlstr}) sub where sub.id = p.id)\n')
+
+            print(sqlstr_select)
+            c.execute(sqlstr_select)
             rows = c.fetchall()
             
             result = []
@@ -518,5 +591,101 @@ def random_4 ():
         except Exception as err:
             getdb_pg().rollback()
             raise err
+        
+@app.route("/api/random/5", methods=['POST'])
+def random_5 ():
+    json_text = request.get_data(as_text=True)
+    json_data = json.loads(json_text)
+
+    score = json_data['score']
+    rating = json_data['rating']
+    limit = json_data['limit'] if 'limit' in json_data else 1
+
+    with getdb_pg().cursor() as c:
+        sql_where = f'where 1=1'
+        if score > 0:
+            sql_where += f' and score >= {score}'
+        sqlstr = f'select * from posts_{rating} {sql_where} order by random() limit %s'
+        c.execute(sqlstr, (limit,))
+        rows = c.fetchall()
+
+
+        result = []
+        for row in rows:
+            result.append({
+                "id": row['id'],
+                "file_url": row['file_url'],
+                "width": row['sample_width'],
+                "height": row['sample_height'],
+                "file_ext": row['file_ext']
+            })
+
+        return result
+
+
+@app.route("/api/remove_score", methods=['GET'])
+def remove_score ():
+    limit = request.args.get('limit', 100)
+    ids = []
+    
+    with getdb_pg().cursor() as c:
+        c.execute(f'select id from posts_s where score < 20 order by updated_at asc limit %s', (limit,))
+        rows = c.fetchall()
+        ids = [row['id'] for row in rows]
+        c.execute(f"delete from posts_s where id in ({','.join(['%s'] * len(ids))})", ids)
+        c.execute(f"delete from post_tag_s where post_id in ({','.join(['%s'] * len(ids))})", ids)
+        getdb_pg().commit()
+        
+    with getdb('images-data.db') as conn:
+        c = conn.cursor()
+        c.execute(f"delete from images where id in ({','.join(['?'] * len(ids))})", ids)
+        conn.commit()
+        c.close()
+        return ids
+    
+
+@app.route("/api/gelbooru/posts")
+def gelbooru_proxy():
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'}
+    # 从请求中获取所有查询参数
+    params = request.args.to_dict()
+    
+    # 构建 Gelbooru API URL
+    gelbooru_url = "https://gelbooru.com/index.php"
+    
+    try:
+        # 使用 requests 转发请求到 Gelbooru
+        response = requests.get(gelbooru_url, params=params, headers=headers)
+        
+        # 返回 Gelbooru 的响应
+        return response.json()
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+    
+@app.route("/api/save-pagemap", methods=['POST'])
+def save_pagemap():
+    data = request.get_data(as_text=True)
+    
+    # 将数据保存到本地文件
+    try:
+        with open('pagemap.json', 'w', encoding='utf-8') as f:
+            f.write(data)
+        return jsonify({"status": "success"}), 200
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/load-pagemap", methods=['GET'])
+def load_pagemap():
+    try:
+        # 尝试从本地文件读取数据
+        with open('pagemap.json', 'r', encoding='utf-8') as f:
+            data = f.read()
+        return data, 200, {'Content-Type': 'application/json'}
+    except FileNotFoundError:
+        # 如果文件不存在，返回空对象
+        return jsonify({}), 200
+    except Exception as e:
+        # 处理其他可能的错误
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 app.run()

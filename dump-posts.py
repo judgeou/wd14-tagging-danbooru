@@ -92,7 +92,10 @@ def add_post (post, pg_conn):
     image = Image.open(image_stream)
 
     with lock:
-      tags = app.image_to_wd14_tags(image, 'wd14-convnext-v3', 0.35, False, True, False, True)
+      tags, tags_character = app.image_to_wd14_tags(image, 'wd-eva02-large-tagger-v3', 0.35, False, True, False, True)
+
+    # tags_character limit 256
+    tags_character = tags_character[:256]
     tag_list = tags.split(',')
     tag_list += tags_yande.split(' ')
     tag_list = list(set(tag_list))
@@ -112,11 +115,11 @@ def add_post (post, pg_conn):
       post = get_post(id, rating_flag, c)
 
       if (post is None):
-        c.execute(f'INSERT INTO posts_{rating_flag} (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, ro) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, random())', 
-          (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source))
+        c.execute(f'INSERT INTO posts_{rating_flag} (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, ro, tags_character) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, random(), %s)', 
+          (id, file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, tags_character))
       else:
-        c.execute(f'UPDATE posts_{rating_flag} set file_ext = %s, sample_url = %s, file_url = %s, sample_width = %s, sample_height = %s, score = %s, updated_at = %s, tags = %s, rating = %s, tags_yande = %s, source = %s WHERE id = %s', 
-          (file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, id))
+        c.execute(f'UPDATE posts_{rating_flag} set file_ext = %s, sample_url = %s, file_url = %s, sample_width = %s, sample_height = %s, score = %s, updated_at = %s, tags = %s, rating = %s, tags_yande = %s, source = %s, tags_character = %s WHERE id = %s', 
+          (file_ext, sample_url, file_url, sample_width, sample_height, score, updated_at, tags, rating, tags_yande, source, tags_character, id))
 
       c.execute(f'DELETE FROM post_tag_{rating_flag} where post_id = %s', (id,))
 

@@ -129,6 +129,9 @@ WAIFU_MODELS: Mapping[str, WaifuDiffusionInterrogator] = {
     ),
     'wd14-convnext-v3': WaifuDiffusionInterrogator(
         repo="SmilingWolf/wd-swinv2-tagger-v3"
+    ),
+    'wd-eva02-large-tagger-v3': WaifuDiffusionInterrogator(
+        repo='SmilingWolf/wd-eva02-large-tagger-v3'
     )
 }
 RE_SPECIAL = re.compile(r'([\\()])')

@@ -70,7 +70,7 @@ class WaifuDiffusionInterrogator:
 
         providers = rt.get_available_providers()
 
-        self._model = InferenceSession(str(model_path), providers=['CPUExecutionProvider'])
+        self._model = InferenceSession(str(model_path), providers=['CUDAExecutionProvider'])
         self._tags = pd.read_csv(tags_path)
 
         self.__initialized = True
@@ -110,7 +110,7 @@ class WaifuDiffusionInterrogator:
 
         return full_tags
 
-    def interrogate(self, image: Image) -> Tuple[Dict[str, float], Dict[str, float]]:
+    def interrogate(self, image: Image) -> Tuple[Dict[str, float], Dict[str, float], Dict[str, float]]:
         full_tags = self._calculation(image)
 
         # first 4 items are for rating (general, sensitive, questionable, explicit)
@@ -119,7 +119,10 @@ class WaifuDiffusionInterrogator:
         # rest are regular tags
         tags = dict(full_tags[full_tags['category'] != 9][['name', 'confidence']].values)
 
-        return ratings, tags
+        # character tags
+        character_tags = dict(full_tags[full_tags['category'] == 4][['name', 'confidence']].values)
+
+        return ratings, tags, character_tags
 
 
 WAIFU_MODELS: Mapping[str, WaifuDiffusionInterrogator] = {
@@ -129,6 +132,9 @@ WAIFU_MODELS: Mapping[str, WaifuDiffusionInterrogator] = {
     ),
     'wd14-convnext-v3': WaifuDiffusionInterrogator(
         repo="SmilingWolf/wd-swinv2-tagger-v3"
+    ),
+    'wd-eva02-large-tagger-v3': WaifuDiffusionInterrogator(
+        repo='SmilingWolf/wd-eva02-large-tagger-v3'
     )
 }
 RE_SPECIAL = re.compile(r'([\\()])')
@@ -137,17 +143,26 @@ def image_to_wd14_tags(image: Image.Image, model_name: str, threshold: float,
                        use_spaces: bool, use_escape: bool, include_ranks: bool, score_descend: bool) \
         -> Tuple[Mapping[str, float], str, Mapping[str, float]]:
     model = WAIFU_MODELS[model_name]
-    ratings, tags = model.interrogate(image)
+    ratings, tags, character_tags = model.interrogate(image)
 
     filtered_tags = {
         tag: score for tag, score in tags.items()
         if score >= threshold
     }
 
+    filtered_character_tags = {
+        tag: score for tag, score in character_tags.items()
+        if score >= 0.85
+    }
+
     text_items = []
+    text_items_character = []
     tags_pairs = filtered_tags.items()
+    tags_pairs_character = filtered_character_tags.items()
+
     if score_descend:
         tags_pairs = sorted(tags_pairs, key=lambda x: (-x[1], x[0]))
+        tags_pairs_character = sorted(tags_pairs_character, key=lambda x: (-x[1], x[0]))
     for tag, score in tags_pairs:
         tag_outformat = tag
         if use_spaces:
@@ -157,9 +172,21 @@ def image_to_wd14_tags(image: Image.Image, model_name: str, threshold: float,
         if include_ranks:
             tag_outformat = f"({tag_outformat}:{score:.3f})"
         text_items.append(tag_outformat)
-    output_text = ', '.join(text_items)
 
-    return output_text
+    for tag, score in tags_pairs_character:
+        tag_outformat = tag
+        if use_spaces:
+            tag_outformat = tag_outformat.replace('_', ' ')
+        if use_escape:
+            tag_outformat = re.sub(RE_SPECIAL, r'\\\1', tag_outformat)
+        if include_ranks:
+            tag_outformat = f"({tag_outformat}:{score:.3f})"
+        text_items_character.append(tag_outformat)
+
+    output_text = ', '.join(text_items)
+    output_text_character = ', '.join(text_items_character)
+
+    return output_text, output_text_character
 
 def post_to_item_danbooru (post):
     img_url = post['large_file_url']

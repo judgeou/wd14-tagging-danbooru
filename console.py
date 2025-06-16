@@ -30,7 +30,7 @@ while True:
             image = clipboard_image
         elif len(clipboard_image) == 1:
             image = Image.open(clipboard_image[0])
-        result = app_cpu.image_to_wd14_tags(image, 'wd14-convnext-v3', 0.35, True, True, False, True)
+        result = app_cpu.image_to_wd14_tags(image, 'wd-eva02-large-tagger-v3', 0.35, True, True, False, True)
         result = excludeTags(result)
         result = replaceTags(result)
         print(result)
