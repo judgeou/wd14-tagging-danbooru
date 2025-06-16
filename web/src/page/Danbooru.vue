@@ -25,18 +25,45 @@
 
   <div class="image-grid">
     <div v-for="post in posts" :key="post.id" class="image-item" @click="click_post(post, $event)">
-      <img v-if="['mp4', 'zip'].indexOf(post.file_ext) == -1 && post.large_file_url" :src="post.large_file_url" :alt="post.id" loading="lazy" :class="{ 'blur': post.rating === 'e', 'shake': post.id === copiedId }">
-      <video v-if="['mp4', 'zip'].indexOf(post.file_ext) >= 0 && post.file_url" :src="post.file_url"
-        :alt="post.id"
-        controls
-        loading="lazy"
-        muted
-        loop
-        :class="{ 'blur': post.rating === 'e', 'shake': post.id === copiedId }"
-        @mouseenter="on_mouse_enter"
-        @mouseleave="on_mouse_leave"></video>
-      <a   
-         class="post-id-link" 
+      <!-- 图片懒加载组件 -->
+      <div v-if="['mp4', 'zip'].indexOf(post.file_ext) == -1 && post.large_file_url" 
+           class="lazy-image-container"
+           :ref="el => setImageRef(el, post.id)">
+        <div v-if="!imageLoadedMap[post.id]" class="image-placeholder">
+          <div class="loading-spinner"></div>
+          <span>加载中...</span>
+        </div>
+        <img v-show="imageLoadedMap[post.id]"
+             :src="imageToLoad[post.id] ? post.large_file_url : ''" 
+             :alt="post.id" 
+             :class="{ 'blur': post.rating === 'e', 'shake': post.id === copiedId }"
+             @load="onImageLoad(post.id)"
+             @error="onImageError(post.id)">
+      </div>
+      
+      <!-- 视频懒加载 -->
+      <div v-if="['mp4', 'zip'].indexOf(post.file_ext) >= 0 && post.file_url"
+           class="lazy-video-container"
+           :ref="el => setVideoRef(el, post.id)">
+        <div v-if="!videoLoadedMap[post.id]" class="video-placeholder">
+          <div class="loading-spinner"></div>
+          <span>视频加载中...</span>
+        </div>
+        <video v-show="videoLoadedMap[post.id]"
+               :src="videoToLoad[post.id] ? post.file_url : ''"
+               :alt="post.id"
+               controls
+               muted
+               loop
+               :class="{ 'blur': post.rating === 'e', 'shake': post.id === copiedId }"
+               @loadeddata="onVideoLoad(post.id)"
+               @error="onVideoError(post.id)"
+               @mouseenter="on_mouse_enter"
+               @mouseleave="on_mouse_leave">
+        </video>
+      </div>
+      
+      <a class="post-id-link" 
          target="_blank"
          @click.stop>{{post.id}}</a>
     </div>
@@ -49,7 +76,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, Ref, onMounted } from 'vue'
+import { ref, watch, Ref, onMounted, onUnmounted, nextTick } from 'vue'
 
 const limit = 20
 
@@ -71,8 +98,126 @@ const isOrSearch = ref(false)
 const selectedApi = ref(load_from_localstorage('selected_api', 'danbooru')); 
 watch_save_to_localstorage('selected_api', selectedApi)
 
+// 懒加载相关的状态
+const imageLoadedMap = ref<Record<number, boolean>>({})
+const videoLoadedMap = ref<Record<number, boolean>>({})
+const imageToLoad = ref<Record<number, boolean>>({})
+const videoToLoad = ref<Record<number, boolean>>({})
+const imageRefs = ref<Map<number, HTMLElement>>(new Map())
+const videoRefs = ref<Map<number, HTMLElement>>(new Map())
+let intersectionObserver: IntersectionObserver | null = null
+
+// 设置图片ref
+function setImageRef(el: any, postId: number) {
+  if (el && el instanceof HTMLElement) {
+    imageRefs.value.set(postId, el)
+  } else {
+    imageRefs.value.delete(postId)
+  }
+}
+
+// 设置视频ref
+function setVideoRef(el: any, postId: number) {
+  if (el && el instanceof HTMLElement) {
+    videoRefs.value.set(postId, el)
+  } else {
+    videoRefs.value.delete(postId)
+  }
+}
+
+// 图片加载完成回调
+function onImageLoad(postId: number) {
+  imageLoadedMap.value[postId] = true
+}
+
+// 图片加载错误回调
+function onImageError(postId: number) {
+  console.error(`图片 ${postId} 加载失败`)
+  imageLoadedMap.value[postId] = true // 即使失败也标记为已处理
+}
+
+// 视频加载完成回调
+function onVideoLoad(postId: number) {
+  videoLoadedMap.value[postId] = true
+}
+
+// 视频加载错误回调
+function onVideoError(postId: number) {
+  console.error(`视频 ${postId} 加载失败`)
+  videoLoadedMap.value[postId] = true // 即使失败也标记为已处理
+}
+
+// 初始化Intersection Observer
+function initIntersectionObserver() {
+  if (intersectionObserver) {
+    intersectionObserver.disconnect()
+  }
+
+  intersectionObserver = new IntersectionObserver(
+    (entries) => {
+      entries.forEach((entry) => {
+        if (entry.isIntersecting) {
+          const element = entry.target as HTMLElement
+          const postId = Number(element.dataset.postId || 
+            Array.from(imageRefs.value.entries()).find(([_, el]) => el === element)?.[0] ||
+            Array.from(videoRefs.value.entries()).find(([_, el]) => el === element)?.[0])
+          
+          if (postId) {
+            // 标记为需要加载
+            if (imageRefs.value.has(postId)) {
+              imageToLoad.value[postId] = true
+            }
+            if (videoRefs.value.has(postId)) {
+              videoToLoad.value[postId] = true
+            }
+            
+            // 停止观察这个元素
+            intersectionObserver?.unobserve(element)
+          }
+        }
+      })
+    },
+    {
+      rootMargin: '100px', // 提前100px开始加载
+      threshold: 0.1
+    }
+  )
+}
+
+// 开始观察元素
+function observeElements() {
+  if (!intersectionObserver) return
+
+  // 观察所有图片容器
+  imageRefs.value.forEach((element, postId) => {
+    if (!imageToLoad.value[postId]) {
+      intersectionObserver?.observe(element)
+    }
+  })
+
+  // 观察所有视频容器
+  videoRefs.value.forEach((element, postId) => {
+    if (!videoToLoad.value[postId]) {
+      intersectionObserver?.observe(element)
+    }
+  })
+}
+
+// 重置懒加载状态
+function resetLazyLoadingState() {
+  imageLoadedMap.value = {}
+  videoLoadedMap.value = {}
+  imageToLoad.value = {}
+  videoToLoad.value = {}
+  imageRefs.value.clear()
+  videoRefs.value.clear()
+}
+
 async function search(direction: string) {
   loading.value = true
+  
+  // 重置懒加载状态
+  resetLazyLoadingState()
 
   let tags = tag_input.value
   let page_map_value = {...page_map.value}
@@ -203,6 +348,10 @@ async function search(direction: string) {
 
   loading.value = false
   back_top()
+  
+  // 等待DOM更新后开始观察元素
+  await nextTick()
+  observeElements()
 }
 
 async function click_post(post: any, event: MouseEvent) {
@@ -304,8 +453,18 @@ async function loadPageMap() {
   }
 }
 
-// 在组件挂载时加载 page_map
-onMounted(loadPageMap);
+// 在组件挂载时加载 page_map 并初始化懒加载
+onMounted(() => {
+  loadPageMap()
+  initIntersectionObserver()
+})
+
+// 在组件卸载时清理observer
+onUnmounted(() => {
+  if (intersectionObserver) {
+    intersectionObserver.disconnect()
+  }
+})
 </script>
 
 <style>
@@ -423,5 +582,67 @@ onMounted(loadPageMap);
   margin-bottom: 10px;
   font-size: 14px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* 懒加载相关样式 */
+.lazy-image-container,
+.lazy-video-container {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 200px;
+  background-color: #f5f5f5;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.image-placeholder,
+.video-placeholder {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: #f5f5f5;
+  color: #666;
+  font-size: 14px;
+}
+
+.loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid #f3f3f3;
+  border-top: 3px solid #3498db;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 8px;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* 深色模式下的占位符样式 */
+@media (prefers-color-scheme: dark) {
+  .lazy-image-container,
+  .lazy-video-container {
+    background-color: #2d2d2d;
+  }
+  
+  .image-placeholder,
+  .video-placeholder {
+    background-color: #2d2d2d;
+    color: #ccc;
+  }
+  
+  .loading-spinner {
+    border: 3px solid #444;
+    border-top: 3px solid #3498db;
+  }
 }
 </style>
