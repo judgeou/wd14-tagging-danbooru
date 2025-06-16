@@ -5,7 +5,7 @@
       <option value="gelbooru">Gelbooru</option>
     </select>
     
-    <input type="text" v-model="tag_input" placeholder="tag" style="width: 200px;">
+    <input type="text" v-model="tag_input" placeholder="tag (使用 | 分隔实现OR搜索)" style="width: 300px;">
 
     <input type="date" v-model="before_date">
     <input type="number" v-model="page_map[tag_input]" style="width: 60px;">
@@ -17,6 +17,10 @@
     <button :disabled="loading" @click="search('current')">current</button>
     <button :disabled="loading" @click="search('left')">←left</button>
     <button :disabled="loading" @click="search('right')">right→</button>
+  </div>
+
+  <div v-if="isOrSearch" class="or-search-info">
+    正在进行OR搜索，合并多个条件的结果...
   </div>
 
   <div class="image-grid">
@@ -60,6 +64,9 @@ const copiedId = ref<number | null>(null)
 
 const columnWidth = ref(300)
 
+// 添加OR搜索状态
+const isOrSearch = ref(false)
+
 // 添加 API 选择
 const selectedApi = ref(load_from_localstorage('selected_api', 'danbooru')); 
 watch_save_to_localstorage('selected_api', selectedApi)
@@ -67,7 +74,6 @@ watch_save_to_localstorage('selected_api', selectedApi)
 async function search(direction: string) {
   loading.value = true
 
-  const qs = new URLSearchParams()
   let tags = tag_input.value
   let page_map_value = {...page_map.value}
   let page = page_map_value[tag_input.value] || 1
@@ -82,34 +88,94 @@ async function search(direction: string) {
     page = 1
   }
 
-  // tags += ` date:<${before_date.value}`
-
-  // 根据选择的 API 构建不同的请求
-  let apiUrl
-  if (selectedApi.value === 'danbooru') {
-    qs.set('limit', limit.toString())
-    qs.set('tags', tags)
-    qs.set('page', page.toString())
-    apiUrl = `https://danbooru.donmai.us/posts.json?${qs.toString()}`
-  } else {
-    // Gelbooru API - 使用我们的代理接口
-    qs.set('page', 'dapi')
-    qs.set('s', 'post')
-    qs.set('q', 'index')
-    qs.set('json', '1')
-    qs.set('limit', limit.toString())
-    qs.set('pid', (page - 1).toString())
-    qs.set('tags', tags)
-    apiUrl = `/api/gelbooru/posts?${qs.toString()}`
-  }
-
-  const res = await fetch(apiUrl)
-  const data = await res.json()
-  // Gelbooru 的响应格式可能不同，需要适配
-  const rows = selectedApi.value === 'danbooru' ? data : data.post
+  // 检查是否包含 OR 逻辑（使用 | 分隔符）
+  const tagGroups = tags.split('|').map((group: string) => group.trim()).filter((group: string) => group.length > 0)
   
+  let allRows: any[] = []
+  
+  // 更新OR搜索状态
+  isOrSearch.value = tagGroups.length > 1
+  
+  if (tagGroups.length > 1) {
+    // OR 逻辑：并行发送多个请求
+    const requests = tagGroups.map(async (tagGroup: string) => {
+      const qs = new URLSearchParams()
+      let apiUrl
+      
+      if (selectedApi.value === 'danbooru') {
+        qs.set('limit', limit.toString())
+        qs.set('tags', tagGroup)
+        qs.set('page', page.toString())
+        apiUrl = `https://danbooru.donmai.us/posts.json?${qs.toString()}`
+      } else {
+        // Gelbooru API
+        qs.set('page', 'dapi')
+        qs.set('s', 'post')
+        qs.set('q', 'index')
+        qs.set('json', '1')
+        qs.set('limit', limit.toString())
+        qs.set('pid', (page - 1).toString())
+        qs.set('tags', tagGroup)
+        apiUrl = `/api/gelbooru/posts?${qs.toString()}`
+      }
+      
+      try {
+        const res = await fetch(apiUrl)
+        const data = await res.json()
+        return selectedApi.value === 'danbooru' ? data : data.post
+      } catch (error) {
+        console.error(`搜索标签 "${tagGroup}" 时出错:`, error)
+        return []
+      }
+    })
+    
+    // 等待所有请求完成
+    const results = await Promise.all(requests)
+    
+    // 合并所有结果
+    const allPosts = results.flat()
+    
+    // 按ID去重
+    const uniquePosts = allPosts.filter((post, index, self) => 
+      index === self.findIndex(p => p.id === post.id)
+    )
+    
+    // 按ID排序（最新的在前）
+    uniquePosts.sort((a, b) => b.id - a.id)
+    
+    // 限制结果数量
+    allRows = uniquePosts.slice(0, limit * tagGroups.length)
+    
+  } else {
+    // 单个搜索条件，使用原有逻辑
+    const qs = new URLSearchParams()
+    let apiUrl
+    
+    if (selectedApi.value === 'danbooru') {
+      qs.set('limit', limit.toString())
+      qs.set('tags', tags)
+      qs.set('page', page.toString())
+      apiUrl = `https://danbooru.donmai.us/posts.json?${qs.toString()}`
+    } else {
+      // Gelbooru API
+      qs.set('page', 'dapi')
+      qs.set('s', 'post')
+      qs.set('q', 'index')
+      qs.set('json', '1')
+      qs.set('limit', limit.toString())
+      qs.set('pid', (page - 1).toString())
+      qs.set('tags', tags)
+      apiUrl = `/api/gelbooru/posts?${qs.toString()}`
+    }
+
+    const res = await fetch(apiUrl)
+    const data = await res.json()
+    allRows = selectedApi.value === 'danbooru' ? data : data.post
+  }
+  
+  // 处理 Gelbooru 的数据格式
   if (selectedApi.value === 'gelbooru') {
-    rows.forEach((row: any) => {
+    allRows.forEach((row: any) => {
       // get file_ext from url
       row.file_ext = row.file_url.split('.').pop()
       row.large_file_url = row.sample_url || row.preview_url || row.file_url
@@ -120,7 +186,8 @@ async function search(direction: string) {
       row.tag_string_copyright = ''
     })
   }
-  posts.value = rows
+  
+  posts.value = allRows
 
   page_map_value[tag_input.value] = page
   page_map.value = page_map_value
@@ -345,5 +412,16 @@ onMounted(loadPageMap);
 
 .post-id-link:hover {
   background-color: rgba(0, 0, 0, 0.8);
+}
+
+.or-search-info {
+  background: linear-gradient(90deg, #4CAF50, #45a049);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  text-align: center;
+  margin-bottom: 10px;
+  font-size: 14px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
 }
 </style>
