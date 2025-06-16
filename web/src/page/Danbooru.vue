@@ -9,7 +9,12 @@
 
     <input type="date" v-model="before_date">
     <input type="number" v-model="page_map[tag_input]" style="width: 60px;">
-    <input type="number" v-model="columnWidth" placeholder="列宽(px)" min="100">
+    <select v-model="columnWidth">
+      <option value="200">200px</option>
+      <option value="300">300px</option>
+      <option value="400">400px</option>
+      <option value="500">500px</option>
+    </select>
   </div>
 
   <div class="flex">
@@ -89,7 +94,7 @@ const loading = ref(false)
 // 添加新的ref用于跟踪最近复制的图片
 const copiedId = ref<number | null>(null)
 
-const columnWidth = ref(300)
+const columnWidth = ref(load_from_localstorage('column_width', '300')); watch_save_to_localstorage('column_width', columnWidth)
 
 // 添加OR搜索状态
 const isOrSearch = ref(false)
