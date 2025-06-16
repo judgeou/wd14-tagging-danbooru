@@ -8,6 +8,7 @@
     <input type="text" v-model="tag_input" placeholder="tag (使用 | 分隔实现OR搜索)" style="width: 300px;">
 
     <input type="date" v-model="before_date">
+    <input type="text" v-model="before_id" style="width: 60px;">
     <input type="number" v-model="page_map[tag_input]" style="width: 60px;">
     <select v-model="columnWidth">
       <option value="200">200px</option>
@@ -88,6 +89,7 @@ const limit = 20
 const tag_input = ref(load_from_localstorage_json('tag_input', '1girl')); watch_save_to_localstorage('tag_input', tag_input)
 const page_map = ref<Record<string, number>>({});
 const before_date = ref(load_from_localstorage('before_date', '2024-12-15')); watch_save_to_localstorage('before_date', before_date)
+const before_id = ref(load_from_localstorage('before_id', '0')); watch_save_to_localstorage('before_id', before_id)
 const posts = ref<any[]>([])
 const loading = ref(false)
 
@@ -253,8 +255,11 @@ async function search(direction: string) {
       let apiUrl
       
       if (selectedApi.value === 'danbooru') {
+        const final_tag = tagGroup 
+        // + (before_date.value ? ` date:<${before_date.value}` : '')
+        + (before_id.value ? ` id:<${before_id.value}` : '')
         qs.set('limit', limit.toString())
-        qs.set('tags', tagGroup)
+        qs.set('tags', final_tag)
         qs.set('page', page.toString())
         apiUrl = `https://danbooru.donmai.us/posts.json?${qs.toString()}`
       } else {
