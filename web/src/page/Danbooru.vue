@@ -222,6 +222,7 @@ function resetLazyLoadingState() {
 
 async function search(direction: string) {
   loading.value = true
+  back_top()
   
   // 重置懒加载状态
   resetLazyLoadingState()
@@ -357,7 +358,6 @@ async function search(direction: string) {
   });
 
   loading.value = false
-  back_top()
   
   // 等待DOM更新后开始观察元素
   await nextTick()
